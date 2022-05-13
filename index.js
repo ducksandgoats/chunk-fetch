@@ -9,15 +9,24 @@ const { EventIterator } = require('event-iterator')
 const crypto = require('crypto')
 const posixPath = require('path').posix
 const { exporter } = require('ipfs-unixfs-exporter')
+const IPFS = require('ipfs')
 
 const ipfsTimeout = 30000
 const ipnsTimeout = 120000
 const SUPPORTED_METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'DELETE']
 
-module.exports = function makeIPFSFetch ({ ipfs }) {
+module.exports = function makeIPFSFetch (opts = {}) {
+  let ipfs = opts.ipfs
+  if(!ipfs){
+    IPFS.create(opts).then(init => {
+      ipfs = init
+    }).catch(err => {
+      throw err
+    })
+  }
   return makeFetch(async ({ url, headers: reqHeaders, method, signal, body }) => {
     const { hostname, pathname, protocol, searchParams } = new URL(url)
-    let ipfsPath = hostname ? hostname + pathname : pathname.slice(1)
+    let ipfsPath = hostname !== '_' ? hostname + pathname : method !== 'PUT' ? pathname.slice(1) : 'bafyaabakaieac' + pathname
 
     const headers = {}
 
