@@ -11,7 +11,7 @@ const path = require('path')
 module.exports = async function makeIPFSFetch (opts = {}) {
   const DEFAULT_OPTS = {}
   const finalOpts = { ...DEFAULT_OPTS, ...opts }
-  const app = await (async (anonOpts) => {if(anonOpts.ipfs){return anonOpts.ipfs}else{return await IPFS.create(anonOpts)}})(finalOpts)
+  const app = await (async (finalOpts) => {if(finalOpts.ipfs){return finalOpts.ipfs}else{return await IPFS.create(finalOpts)}})(finalOpts)
   const ipfsTimeout = 30000
   const SUPPORTED_METHODS = ['GET', 'HEAD', 'PUT', 'DELETE']
   const encodeType = '~'
@@ -85,7 +85,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         const usePath = path + info.filename
         data.push(usePath)
         try {
-          push(ipfs.files.write(usePath, Readable.from(fileData), {cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false, timeout: timer}))
+          push(app.files.write(usePath, Readable.from(fileData), {cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false, timeout: timer}))
         } catch (e) {
           fail(e)
         }
@@ -147,7 +147,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         return { statusCode: 409, headers: {}, data: ['something wrong with hostname'] }
       }
 
-      const main = formatReq(hostname, pathname)
+      const main = formatReq(mainHostname, pathname)
 
       if(method === 'HEAD'){
         try {
@@ -276,5 +276,5 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     }
   })
 
-  fetch.close = async () => {await app.stop()}
+  fetch.close = async () => {return await app.stop()}
 }
