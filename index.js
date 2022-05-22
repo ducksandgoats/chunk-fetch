@@ -65,7 +65,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
 
   async function saveData (path, content, useHeaders, timer) {
     const data = []
-    const busboy = new Busboy({ headers: useHeaders })
+    const busboy = Busboy({ headers: useHeaders })
 
     const toUpload = new EventIterator(({ push, stop, fail }) => {
       function handleOff(){

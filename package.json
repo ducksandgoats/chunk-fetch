@@ -25,7 +25,7 @@
   },
   "homepage": "https://github.com/ducksandgoats/chunk-fetch#readme",
   "dependencies": {
-    "busboy": "^0.3.1",
+    "busboy": "^1.6.0",
     "event-iterator": "^2.0.0",
     "ipfs": "^0.62.3",
     "make-fetch": "^2.2.1",
