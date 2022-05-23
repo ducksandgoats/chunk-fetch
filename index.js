@@ -6,7 +6,6 @@ const Busboy = require('busboy')
 const { Readable } = require('stream')
 const { EventIterator } = require('event-iterator')
 const IPFS = require('ipfs')
-const FileType = require('file-type')
 const path = require('path')
 
 module.exports = async function makeIPFSFetch (opts = {}) {
@@ -193,14 +192,14 @@ module.exports = async function makeIPFSFetch (opts = {}) {
               const [{ start, end }] = ranges
               const length = (end - start + 1)
               const plain = await fileIter(app.files.read(main, { offset: start, length, timeout: ipfsTimeout }))
-              return {statusCode: 206, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Type': main.includes('/') ? getMimeType(main) : `${(await FileType.fileTypeFromBuffer(Buffer.from(plain))).mime}`, 'Content-Length': `${length}`, 'Content-Range': `bytes ${start}-${end}/${mainData.size}`}, data: [plain]}
+              return {statusCode: 206, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Type': main.includes('/') ? getMimeType(main) : 'CID', 'Content-Length': `${length}`, 'Content-Range': `bytes ${start}-${end}/${mainData.size}`}, data: [plain]}
             } else {
               const plain = await fileIter(app.files.read(main, { timeout: ipfsTimeout }))
-              return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Type': main.includes('/') ? getMimeType(main) : `${(await FileType.fileTypeFromBuffer(Buffer.from(plain))).mime}`, 'Content-Length': `${mainData.size}`}, data: [plain]}
+              return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Type': main.includes('/') ? getMimeType(main) : 'CID', 'Content-Length': `${mainData.size}`}, data: [plain]}
             }
           } else {
             const plain = await fileIter(app.files.read(main, { timeout: ipfsTimeout }))
-            return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Type': main.includes('/') ? getMimeType(main) : `${(await FileType.fileTypeFromBuffer(Buffer.from(plain))).mime}`, 'Content-Length': `${mainData.size}`}, data: [plain]}
+            return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Type': main.includes('/') ? getMimeType(main) : 'CID', 'Content-Length': `${mainData.size}`}, data: [plain]}
           }
         } else {
           throw new Error('not a directory or file')
