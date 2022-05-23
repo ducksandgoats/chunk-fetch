@@ -8,10 +8,10 @@ const { EventIterator } = require('event-iterator')
 const IPFS = require('ipfs')
 const path = require('path')
 
-module.exports = function makeIPFSFetch (opts = {}) {
+module.exports = async function makeIPFSFetch (opts = {}) {
   const DEFAULT_OPTS = {}
   const finalOpts = { ...DEFAULT_OPTS, ...opts }
-  const app = finalOpts.ipfs
+  const app = await (async (finalOpts) => {if(finalOpts.ipfs){return finalOpts.ipfs}else{return await IPFS.create(finalOpts)}})(finalOpts)
   const ipfsTimeout = 30000
   const SUPPORTED_METHODS = ['GET', 'HEAD', 'PUT', 'DELETE']
   const encodeType = '~'
