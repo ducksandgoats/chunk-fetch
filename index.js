@@ -4,7 +4,6 @@ const mime = require('mime/lite')
 const { CID } = require('multiformats/cid')
 const Busboy = require('busboy')
 const { Readable } = require('stream')
-const { EventIterator } = require('event-iterator')
 const IPFS = require('ipfs')
 const path = require('path')
 
@@ -46,12 +45,12 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     return mimeType
   }
 
-  async function collect (iterable) {
-    const result = []
-    for await (const item of iterable) {
-      result.push(item)
-    }
-  }
+  // async function collect (iterable) {
+  //   const result = []
+  //   for await (const item of iterable) {
+  //     result.push(item)
+  //   }
+  // }
 
   async function dirIter (iterable) {
     const result = []
@@ -64,10 +63,11 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   }
 
   async function saveData (path, content, useHeaders, timer) {
-    const data = []
-    const busboy = Busboy({ headers: useHeaders })
+    const {savePath, saveIter} = await new Promise((resolve, reject) => {
+      const savePath = []
+      const saveIter = []
+      const busboy = Busboy({ headers: useHeaders })
 
-    const toUpload = new EventIterator(({ push, stop, fail }) => {
       function handleOff(){
         busboy.off('error', handleError)
         busboy.off('finish', handleFinish)
@@ -75,37 +75,33 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       }
       function handleFinish(){
         handleOff()
-        stop()
+        resolve({savePath, saveIter})
       }
       function handleError(error){
         handleOff()
-        fail(error)
+        reject(error)
       }
       function handleFiles(fieldName, fileData, info){
         const usePath = path + info.filename
-        data.push(usePath)
-        try {
-          push(app.files.write(usePath, Readable.from(fileData), {cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false, timeout: timer}))
-        } catch (e) {
-          fail(e)
-        }
+        savePath.push(usePath)
+        saveIter.push(app.files.write(usePath, Readable.from(fileData), {cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false, timeout: timer}))
       }
       busboy.on('error', handleError)
       busboy.on('finish', handleFinish)
 
       busboy.on('file', handleFiles)
+  
+      // Parse body as a multipart form
+      // TODO: Readable.from doesn't work in browsers
+      Readable.from(content).pipe(busboy)
     })
-
-    // Parse body as a multipart form
-    // TODO: Readable.from doesn't work in browsers
-    Readable.from(content).pipe(busboy)
 
     // toUpload is an async iterator of promises
     // We collect the promises (all files are queued for upload)
     // Then we wait for all of them to resolve
     // await Promise.all(await collect(toUpload))
-    await Promise.all(await collect(toUpload))
-    return data
+    await Promise.all(saveIter)
+    return savePath
   }
 
   async function iterFiles(data, opts){
