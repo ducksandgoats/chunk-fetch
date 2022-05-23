@@ -1,6 +1,6 @@
 {
   "name": "chunk-fetch",
-  "version": "15.0.1",
+  "version": "15.0.2",
   "description": "Use the same `fetch()` API browsers provide for HTTP, but for IPFS",
   "main": "index.js",
   "scripts": {
@@ -27,6 +27,7 @@
   "dependencies": {
     "busboy": "^1.6.0",
     "event-iterator": "^2.0.0",
+    "file-type": "^17.1.1",
     "ipfs": "^0.62.3",
     "make-fetch": "^2.2.1",
     "mime": "^2.4.6",

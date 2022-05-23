@@ -6,6 +6,7 @@ const Busboy = require('busboy')
 const { Readable } = require('stream')
 const { EventIterator } = require('event-iterator')
 const IPFS = require('ipfs')
+const FileType = require('file-type')
 const path = require('path')
 
 module.exports = async function makeIPFSFetch (opts = {}) {
@@ -104,10 +105,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     // We collect the promises (all files are queued for upload)
     // Then we wait for all of them to resolve
     // await Promise.all(await collect(toUpload))
-    await Promise.race([
-      new Promise((resolve, reject) => setTimeout(() => reject(new Error('timed out while saving data')), timer)),
-      Promise.all(await collect(toUpload))
-    ])
+    await Promise.all(await collect(toUpload))
     return data
   }
 
@@ -124,9 +122,9 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   }
 
   async function fileIter(iterable){
-    let result = ''
+    const result = ''
     for await (const i of iterable){
-      result += i.toString()
+      result.concat(i.toString())
     }
     return result
   }
@@ -150,83 +148,67 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       const main = formatReq(mainHostname, pathname)
 
       if(method === 'HEAD'){
+        let mainData = null
         try {
-          let mainData = await app.files.stat(main, {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout})
-          return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: []}
+          mainData = await app.files.stat(main, {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout})
         } catch (error) {
           return {statusCode: 400, headers: {'X-Issue': error.message}, data: []}
         }
+        return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: []}
       } else if(method === 'GET'){
+        let mainData = null
         try {
-          let mainData = await app.files.stat(main, {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout})
-          if(mainData.type === 'directory'){
-            if(!reqHeaders['accept'] || !reqHeaders['accept'].includes('text/html') || !reqHeaders['accept'].includes('application/json')){
-              const plain = await dirIter(app.files.ls(main, {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout}))
-              let useData = ''
-              plain.forEach(data => {
-                for(const prop in data){
-                  useData += `${prop}: ${data[prop]}\n`
-                }
-                useData += '\n\n\n'
-              })
-              return {statusCode: 200, headers: {'Content-Type': 'text/plain; charset=utf-8', 'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: [useData]}
-            } else if(reqHeaders['accept'].includes('text/html')){
-              const plain = await dirIter(app.files.ls(main, {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout}))
-              return {statusCode: 200, headers: {'Content-Type': 'text/html; charset=utf-8', 'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: [`<html><head><title>Fetch</title></head><body><div>${JSON.stringify(plain)}</div></body></html>`]}
-            } else if(reqHeaders['accept'].includes('application/json')){
-              const plain = await dirIter(app.files.ls(main, {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout}))
-              return {statusCode: 200, headers: {'Content-Type': 'application/json; charset=utf-8', 'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: [JSON.stringify(plain)]}
-            }
-          } else if(mainData.type === 'file'){
-            if(reqHeaders.Range || reqHeaders.range){
-              const ranges = parseRange(size, isRanged)
-              if (ranges && ranges.length && ranges.type === 'bytes') {
-                const [{ start, end }] = ranges
-                const length = (end - start + 1)
-                const plain = await fileIter(app.files.read(main, { offset: start, length, timeout: ipfsTimeout }))
-                return {statusCode: 206, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Type': getMimeType(main), 'Content-Length': `${length}`, 'Content-Range': `bytes ${start}-${end}/${mainData.size}`}, data: [plain]}
-              } else {
-                const plain = await fileIter(app.files.read(main, { timeout: ipfsTimeout }))
-                return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Type': getMimeType(main), 'Content-Length': `${mainData.size}`}, data: [plain]}
-              }
-            } else {
-              const plain = await fileIter(app.files.read(main, { timeout: ipfsTimeout }))
-              return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Type': getMimeType(main), 'Content-Length': `${mainData.size}`}, data: [plain]}
-            }
-          } else {
-            throw new Error('not a directory or file')
-          }
+          mainData = await app.files.stat(main, {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout})
         } catch (error) {
           if(!reqHeaders['accept'] || !reqHeaders['accept'].includes('text/html') || !reqHeaders['accept'].includes('application/json')){
-            return {statusCode: 400, headers: {'Content-Type': 'text/plain; charset=utf-8', 'X-Issue': error.name}, data: [error.message]}
+            return {statusCode: 400, headers: {'Content-Type': 'text/plain; charset=utf-8', 'X-Issue': error.name}, data: [error.stack]}
           } else if(reqHeaders['accept'].includes('text/html')){
-            return {statusCode: 400, headers: {'Content-Type': 'text/html; charset=utf-8', 'X-Issue': error.name}, data: [`<html><head><title>Fetch</title></head><body><div>${error.message}</div></body></html>`]}
+            return {statusCode: 400, headers: {'Content-Type': 'text/html; charset=utf-8', 'X-Issue': error.name}, data: [`<html><head><title>Fetch</title></head><body><div>${error.stack}</div></body></html>`]}
           } else if(reqHeaders['accept'].includes('application/json')){
-            return {statusCode: 400, headers: {'Content-Type': 'application/json; charset=utf-8', 'X-Issue': error.name}, data: [JSON.stringify(error.message)]}
+            return {statusCode: 400, headers: {'Content-Type': 'application/json; charset=utf-8', 'X-Issue': error.name}, data: [JSON.stringify(error.stack)]}
           }
         }
-      } else if(method === 'PUT'){
-        try {
-          let mainData = await saveData(main, body, headers, reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout)
-          if(main === '/'){
-            mainData = await iterFiles(mainData, {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout})
-          } else {
-            mainData = await dirIter(app.files.ls(main, {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout}))
-          }
+        if(mainData.type === 'directory'){
           if(!reqHeaders['accept'] || !reqHeaders['accept'].includes('text/html') || !reqHeaders['accept'].includes('application/json')){
+            const plain = await dirIter(app.files.ls(main, {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout}))
             let useData = ''
-            mainData.forEach(data => {
+            plain.forEach(data => {
               for(const prop in data){
                 useData += `${prop}: ${data[prop]}\n`
               }
               useData += '\n\n\n'
             })
-            return {statusCode: 200, headers: {'Content-Type': 'text/plain; charset=utf-8'}, data: [useData]}
+            return {statusCode: 200, headers: {'Content-Type': 'text/plain; charset=utf-8', 'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: [useData]}
           } else if(reqHeaders['accept'].includes('text/html')){
-            return {statusCode: 200, headers: {'Content-Type': 'text/html; charset=utf-8'}, data: [`<html><head><title>Fetch</title></head><body><div>${JSON.stringify(mainData)}</div></body></html>`]}
+            const plain = await dirIter(app.files.ls(main, {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout}))
+            return {statusCode: 200, headers: {'Content-Type': 'text/html; charset=utf-8', 'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: [`<html><head><title>Fetch</title></head><body><div>${JSON.stringify(plain)}</div></body></html>`]}
           } else if(reqHeaders['accept'].includes('application/json')){
-            return {statusCode: 200, headers: {'Content-Type': 'application/json; charset=utf-8'}, data: [JSON.stringify(mainData)]}
+            const plain = await dirIter(app.files.ls(main, {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout}))
+            return {statusCode: 200, headers: {'Content-Type': 'application/json; charset=utf-8', 'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: [JSON.stringify(plain)]}
           }
+        } else if(mainData.type === 'file'){
+          if(reqHeaders.Range || reqHeaders.range){
+            const ranges = parseRange(size, isRanged)
+            if (ranges && ranges.length && ranges.type === 'bytes') {
+              const [{ start, end }] = ranges
+              const length = (end - start + 1)
+              const plain = await fileIter(app.files.read(main, { offset: start, length, timeout: ipfsTimeout }))
+              return {statusCode: 206, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Type': main.includes('/') ? getMimeType(main) : `${(await FileType.fileTypeFromBuffer(Buffer.from(plain))).mime}`, 'Content-Length': `${length}`, 'Content-Range': `bytes ${start}-${end}/${mainData.size}`}, data: [plain]}
+            } else {
+              const plain = await fileIter(app.files.read(main, { timeout: ipfsTimeout }))
+              return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Type': main.includes('/') ? getMimeType(main) : `${(await FileType.fileTypeFromBuffer(Buffer.from(plain))).mime}`, 'Content-Length': `${mainData.size}`}, data: [plain]}
+            }
+          } else {
+            const plain = await fileIter(app.files.read(main, { timeout: ipfsTimeout }))
+            return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Type': main.includes('/') ? getMimeType(main) : `${(await FileType.fileTypeFromBuffer(Buffer.from(plain))).mime}`, 'Content-Length': `${mainData.size}`}, data: [plain]}
+          }
+        } else {
+          throw new Error('not a directory or file')
+        }
+      } else if(method === 'PUT'){
+        let mainData = null
+        try {
+          mainData = await saveData(main, body, reqHeaders, reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout)
         } catch (error) {
           if(!reqHeaders['accept'] || !reqHeaders['accept'].includes('text/html') || !reqHeaders['accept'].includes('application/json')){
             return {statusCode: 400, headers: {'Content-Type': 'text/plain; charset=utf-8', 'X-Issue': error.name}, data: [error.message]}
@@ -236,29 +218,27 @@ module.exports = async function makeIPFSFetch (opts = {}) {
             return {statusCode: 400, headers: {'Content-Type': 'application/json; charset=utf-8', 'X-Issue': error.name}, data: [JSON.stringify(error.message)]}
           }
         }
+        mainData = await iterFiles(mainData, {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout})
+        if(!reqHeaders['accept'] || !reqHeaders['accept'].includes('text/html') || !reqHeaders['accept'].includes('application/json')){
+          let useData = ''
+          mainData.forEach(data => {
+            for(const prop in data){
+              useData += `${prop}: ${data[prop]}\n`
+            }
+            useData += '\n\n\n'
+          })
+          return {statusCode: 200, headers: {'Content-Type': 'text/plain; charset=utf-8'}, data: [useData]}
+        } else if(reqHeaders['accept'].includes('text/html')){
+          return {statusCode: 200, headers: {'Content-Type': 'text/html; charset=utf-8'}, data: [`<html><head><title>Fetch</title></head><body><div>${JSON.stringify(mainData)}</div></body></html>`]}
+        } else if(reqHeaders['accept'].includes('application/json')){
+          return {statusCode: 200, headers: {'Content-Type': 'application/json; charset=utf-8'}, data: [JSON.stringify(mainData)]}
+        }
       } else if(method === 'DELETE'){
+        let mainData = null
         try {
-          const mainData = await app.files.stat(main, {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout})
+          mainData = await app.files.stat(main, {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout})
           mainData.cid = mainData.cid.toV1().toString()
           mainData.link = 'ipfs://' + mainData.cid
-          if(mainData.type === 'directory'){
-            await app.files.rm(main, {cidVersion: 1, recursive: true, timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout})
-          } else if(mainData.type === 'file'){
-            await app.files.rm(main, {cidVersion: 1, timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout})
-          } else {
-            throw new Error('not a directory or file')
-          }
-          if(!reqHeaders['accept'] || !reqHeaders['accept'].includes('text/html') || !reqHeaders['accept'].includes('application/json')){
-            let useData = ''
-            for(const prop in mainData){
-              useData += `${prop}: ${mainData[prop]}\n`
-            }
-            return {statusCode: 200, headers: {'Content-Type': 'text/plain; charset=utf-8'}, data: [useData]}
-          } else if(reqHeaders['accept'].includes('text/html')){
-            return {statusCode: 200, headers: {'Content-Type': 'text/html; charset=utf-8'}, data: [`<html><head><title>Fetch</title></head><body><div>${JSON.stringify(mainData)}</div></body></html>`]}
-          } else if(reqHeaders['accept'].includes('application/json')){
-            return {statusCode: 200, headers: {'Content-Type': 'application/json; charset=utf-8'}, data: [JSON.stringify(mainData)]}
-          }
         } catch (error) {
           if(!reqHeaders['accept'] || !reqHeaders['accept'].includes('text/html') || !reqHeaders['accept'].includes('application/json')){
             return {statusCode: 400, headers: {'Content-Type': 'text/plain; charset=utf-8', 'X-Issue': error.name}, data: [error.message]}
@@ -267,6 +247,24 @@ module.exports = async function makeIPFSFetch (opts = {}) {
           } else if(reqHeaders['accept'].includes('application/json')){
             return {statusCode: 400, headers: {'Content-Type': 'application/json; charset=utf-8', 'X-Issue': error.name}, data: [JSON.stringify(error.message)]}
           }
+        }
+        if(mainData.type === 'directory'){
+          await app.files.rm(main, {cidVersion: 1, recursive: true, timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout})
+        } else if(mainData.type === 'file'){
+          await app.files.rm(main, {cidVersion: 1, timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout})
+        } else {
+          throw new Error('not a directory or file')
+        }
+        if(!reqHeaders['accept'] || !reqHeaders['accept'].includes('text/html') || !reqHeaders['accept'].includes('application/json')){
+          let useData = ''
+          for(const prop in mainData){
+            useData += `${prop}: ${mainData[prop]}\n`
+          }
+          return {statusCode: 200, headers: {'Content-Type': 'text/plain; charset=utf-8'}, data: [useData]}
+        } else if(reqHeaders['accept'].includes('text/html')){
+          return {statusCode: 200, headers: {'Content-Type': 'text/html; charset=utf-8'}, data: [`<html><head><title>Fetch</title></head><body><div>${JSON.stringify(mainData)}</div></body></html>`]}
+        } else if(reqHeaders['accept'].includes('application/json')){
+          return {statusCode: 200, headers: {'Content-Type': 'application/json; charset=utf-8'}, data: [JSON.stringify(mainData)]}
         }
       } else {
         return {statusCode: 400, headers: {}, data: ['wrong method']}
