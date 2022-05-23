@@ -203,7 +203,8 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       } else if(method === 'PUT'){
         let mainData = null
         try {
-          mainData = await saveData(main, body, reqHeaders, reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout)
+          // mainData = await saveData(main, body, reqHeaders, reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout)
+          mainData = await iterFiles(await saveData(main, body, reqHeaders, reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout), {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout})
         } catch (error) {
           if(!reqHeaders['accept'] || !reqHeaders['accept'].includes('text/html') || !reqHeaders['accept'].includes('application/json')){
             return {statusCode: 400, headers: {'Content-Type': 'text/plain; charset=utf-8', 'X-Issue': error.name}, data: [error.message]}
@@ -213,7 +214,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
             return {statusCode: 400, headers: {'Content-Type': 'application/json; charset=utf-8', 'X-Issue': error.name}, data: [JSON.stringify(error.message)]}
           }
         }
-        mainData = await iterFiles(mainData, {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout})
+        // mainData = await iterFiles(mainData, {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout})
         if(!reqHeaders['accept'] || !reqHeaders['accept'].includes('text/html') || !reqHeaders['accept'].includes('application/json')){
           let useData = ''
           mainData.forEach(data => {
