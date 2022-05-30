@@ -13,36 +13,55 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   const app = await (async (finalOpts) => {if(finalOpts.ipfs){return finalOpts.ipfs}else{return await IPFS.create(finalOpts)}})(finalOpts)
   const ipfsTimeout = 30000
   const SUPPORTED_METHODS = ['GET', 'HEAD', 'PUT', 'DELETE']
-  const encodeType = '~'
+  const encodeType = 'hex'
   const hostType = '_'
 
   function formatReq(hostname, pathname){
     let query = null
+    let mimeType = null
     if(hostname === hostType){
       query = pathname
+      mimeType = mime.getType(pathname)
     } else {
-      try {
-        query = CID.parse(hostname)
-      } catch (err) {
-        console.error(err.message)
-        query = '/' + hostname
-        const mid = pathname.split('/').filter(Boolean).map(data => {return decodeURIComponent(data)})
-        if(mid.length){
-          if(mid[mid.length - 1].includes('.')){
-            query = query + '/' + mid.join('/')
-          } else {
-            query = query + '/' + mid.join('/') + '/'
+      if(hostname.includes('.')){
+        try {
+          hostname = hostname.split('.')
+          query = CID.parse(hostname[0])
+          mimeType = mime.getType(hostname[1])
+        } catch (error) {
+          throw error
+        }
+      } else {
+        try {
+          query = CID.parse(hostname)
+          mimeType = mime.getType(pathname)
+        } catch (err) {
+          console.error(err.message)
+          query = '/' + hostname
+          const mid = pathname.split('/').filter(Boolean).map(data => {return decodeURIComponent(data)})
+          if(mid.length){
+            if(mid[mid.length - 1].includes('.')){
+              query = query + '/' + mid.join('/')
+            } else {
+              query = query + '/' + mid.join('/') + '/'
+            }
           }
+          mimeType = mime.getType(pathname)
         }
       }
     }
-    return query
+    return {query, mimeType}
   }
 
-  function getMimeType (path) {
-    let mimeType = mime.getType(path) || 'text/plain'
-    if (mimeType.startsWith('text/')) mimeType = `${mimeType}; charset=utf-8`
+  function getMime (path) {
+    let mimeType = mime.getType(path)
+    if (mimeType && mimeType.startsWith('text/')) mimeType = `${mimeType}; charset=utf-8`
     return mimeType
+  }
+
+  function getType (type) {
+    if (type.startsWith('text/')) type = `${type}; charset=utf-8`
+    return type
   }
 
   // async function collect (iterable) {
@@ -62,7 +81,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     return result
   }
 
-  async function saveData (path, content, useHeaders, timer) {
+  async function saveFormData (path, content, useHeaders, useOpts) {
     const {savePath, saveIter} = await new Promise((resolve, reject) => {
       const savePath = []
       const saveIter = []
@@ -84,7 +103,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       function handleFiles(fieldName, fileData, info){
         const usePath = path + info.filename
         savePath.push(usePath)
-        saveIter.push(app.files.write(usePath, Readable.from(fileData), {cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false, timeout: timer}))
+        saveIter.push(app.files.write(usePath, Readable.from(fileData), useOpts))
       }
       busboy.on('error', handleError)
       busboy.on('finish', handleFinish)
@@ -107,22 +126,55 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   async function iterFiles(data, opts){
     const result = []
     for(const i of data){
-      const useData = await app.files.stat(i, opts)
+      try {
+        const useData = await app.files.stat(i, opts)
+        useData.cid = useData.cid.toV1().toString()
+        useData.link = 'ipfs://' + useData.cid
+        useData.file = i
+        result.push(useData)
+      } catch (error) {
+        console.error(typeof(error))
+        const useData = {}
+        useData.file = i
+        result.push(useData)
+      }
+    }
+    return result
+  }
+
+  async function iterFile(data, opts){
+    const result = []
+    try {
+      const useData = await app.files.stat(data, opts)
       useData.cid = useData.cid.toV1().toString()
       useData.link = 'ipfs://' + useData.cid
+      useData.file = i
+      result.push(useData)
+    } catch (error) {
+      console.error(typeof(error))
+      const useData = {}
       useData.file = i
       result.push(useData)
     }
     return result
   }
 
-  async function fileIter(iterable){
-    const result = ''
-    for await (const i of iterable){
-      result.concat(i.toString())
-    }
-    return result
-  }
+  // async function fileIter(iterable, tag){
+  //   // let result = null
+  //   let result = ''
+  //   if(tag){
+  //     // result = ''
+  //     for await (const i of iterable){
+  //       result += i.toString('base64')
+  //     }
+  //   } else {
+  //     // result = ''
+  //     for await (const i of iterable){
+  //       result += i.toString()
+  //     }
+  //   }
+  //   return result
+  // }
 
   const fetch = makeFetch(async (request) => {
 
@@ -130,7 +182,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     
     try {
       const { hostname, pathname, protocol, searchParams } = new URL(url)
-      const mainHostname = hostname && hostname[0] === encodeType ? Buffer.from(hostname.slice(1), 'hex').toString('utf-8') : hostname
+      const mainHostname = hostname && hostname.startsWith(encodeType) ? Buffer.from(hostname.slice(encodeType.length), 'hex').toString('utf-8') : hostname
 
       if (protocol !== 'ipfs:') {
         return { statusCode: 409, headers: {}, data: ['wrong protocol'] }
@@ -140,7 +192,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         return { statusCode: 409, headers: {}, data: ['something wrong with hostname'] }
       }
 
-      const main = formatReq(mainHostname, pathname)
+      const {query: main, mimeType: type} = formatReq(mainHostname, pathname)
 
       if(method === 'HEAD'){
         let mainData = null
@@ -187,15 +239,12 @@ module.exports = async function makeIPFSFetch (opts = {}) {
             if (ranges && ranges.length && ranges.type === 'bytes') {
               const [{ start, end }] = ranges
               const length = (end - start + 1)
-              const plain = await fileIter(app.files.read(main, { offset: start, length, timeout: ipfsTimeout }))
-              return {statusCode: 206, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Type': main.includes('/') ? getMimeType(main) : 'CID', 'Content-Length': `${length}`, 'Content-Range': `bytes ${start}-${end}/${mainData.size}`}, data: [plain]}
+              return {statusCode: 206, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Type': type ? getType(type) : 'CID', 'Content-Length': `${length}`, 'Content-Range': `bytes ${start}-${end}/${mainData.size}`}, data: app.files.read(main, { offset: start, length, timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout })}
             } else {
-              const plain = await fileIter(app.files.read(main, { timeout: ipfsTimeout }))
-              return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Type': main.includes('/') ? getMimeType(main) : 'CID', 'Content-Length': `${mainData.size}`}, data: [plain]}
+              return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Type': type ? getType(type) : 'CID', 'Content-Length': `${mainData.size}`}, data: app.files.read(main, { timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout })}
             }
           } else {
-            const plain = await fileIter(app.files.read(main, { timeout: ipfsTimeout }))
-            return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Type': main.includes('/') ? getMimeType(main) : 'CID', 'Content-Length': `${mainData.size}`}, data: [plain]}
+            return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Type': type ? getType(type) : 'CID', 'Content-Length': `${mainData.size}`}, data: app.files.read(main, { timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout })}
           }
         } else {
           throw new Error('not a directory or file')
@@ -203,8 +252,13 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       } else if(method === 'PUT'){
         let mainData = null
         try {
-          // mainData = await saveData(main, body, reqHeaders, reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout)
-          mainData = await iterFiles(await saveData(main, body, reqHeaders, reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout), {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout})
+          if(reqHeaders['content-type'] && reqHeaders['content-type'].includes('multipart/form-data')){
+            mainData = await saveFormData(main, body, reqHeaders, reqHeaders['x-opt'] ? {...JSON.parse(reqHeaders['x-opt']), ...{timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false}} : {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false})
+            mainData = await iterFiles(mainData, {timeout: ipfsTimeout})
+          } else {
+            await app.files.write(main, body, reqHeaders['x-opt'] ? {...JSON.parse(reqHeaders['x-opt']), ...{timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false}} : {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false})
+            mainData = await iterFile(main, {timeout: ipfsTimeout})
+          }
         } catch (error) {
           if(!reqHeaders['accept'] || !reqHeaders['accept'].includes('text/html') || !reqHeaders['accept'].includes('application/json')){
             return {statusCode: 400, headers: {'Content-Type': 'text/plain; charset=utf-8', 'X-Issue': error.name}, data: [error.message]}
@@ -214,8 +268,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
             return {statusCode: 400, headers: {'Content-Type': 'application/json; charset=utf-8', 'X-Issue': error.name}, data: [JSON.stringify(error.message)]}
           }
         }
-        // mainData = await iterFiles(mainData, {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout})
-        if(!reqHeaders['accept'] || !reqHeaders['accept'].includes('text/html') || !reqHeaders['accept'].includes('application/json')){
+        if((!reqHeaders['accept']) || (!reqHeaders['accept'].includes('text/html') && !reqHeaders['accept'].includes('application/json'))){
           let useData = ''
           mainData.forEach(data => {
             for(const prop in data){
