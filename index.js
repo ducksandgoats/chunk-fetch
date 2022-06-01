@@ -319,7 +319,13 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         return {statusCode: 400, headers: {}, data: ['wrong method']}
       }
     } catch (error) {
-      return {statusCode: 500, headers: {}, data: [error.stack]}
+      if(!reqHeaders['accept'] || !reqHeaders['accept'].includes('text/html') || !reqHeaders['accept'].includes('application/json')){
+        return {statusCode: 500, headers: {'Content-Type': 'text/plain; charset=utf-8'}, data: [error.stack]}
+      } else if(reqHeaders['accept'].includes('text/html')){
+        return {statusCode: 500, headers: {'Content-Type': 'text/html; charset=utf-8'}, data: [`<html><head><title>${error.name}</title></head><body><div><p>${error.stack}</p></div></body></html>`]}
+      } else if(reqHeaders['accept'].includes('application/json')){
+        return {statusCode: 500, headers: {'Content-Type': 'application/json; charset=utf-8'}, data: [JSON.stringify(error.stack)]}
+      }
     }
   })
 
