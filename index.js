@@ -17,6 +17,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   const hostType = '_'
 
   function formatReq(hostname, pathname){
+
     let query = null
     let mimeType = null
     if(hostname === hostType){
@@ -38,7 +39,8 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         } catch (err) {
           console.error(err.message)
           query = '/' + hostname
-          const mid = pathname.split('/').filter(Boolean).map(data => {return decodeURIComponent(data)})
+          // const mid = pathname.split('/').filter(Boolean).map(data => {return decodeURIComponent(data)})
+          const mid = pathname.split('/').filter(Boolean)
           if(mid.length){
             if(mid[mid.length - 1].includes('.')){
               query = query + '/' + mid.join('/')
@@ -194,7 +196,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         return { statusCode: 409, headers: {}, data: ['something wrong with hostname'] }
       }
 
-      const {query: main, mimeType: type} = formatReq(mainHostname, pathname)
+      const {query: main, mimeType: type} = formatReq(decodeURIComponent(mainHostname), decodeURIComponent(pathname))
 
       if(method === 'HEAD'){
         let mainData = null
