@@ -128,8 +128,10 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     for(const i of data){
       try {
         const useData = await app.files.stat(i, opts)
+        const ext = i.includes('.') ? i.slice(i.indexOf('.')) : ''
         useData.cid = useData.cid.toV1().toString()
-        useData.link = 'ipfs://' + useData.cid
+        useData.host = 'ipfs://' + useData.cid
+        useData.link = useData.host + ext
         useData.file = i
         result.push(useData)
       } catch (error) {
