@@ -25,29 +25,16 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       mimeType = mime.getType(pathname)
     } else {
       if(hostname.includes('.')){
-        try {
-          hostname = hostname.split('.')
-          query = CID.parse(hostname[0])
-          mimeType = mime.getType(hostname[1])
-        } catch (error) {
-          throw error
-        }
+        query = CID.parse(hostname.substring(0, hostname.indexOf('.')))
+        mimeType = mime.getType(hostname.substring(hostname.indexOf('.')))
       } else {
         try {
           query = CID.parse(hostname)
-          mimeType = mime.getType(pathname)
+          // mimeType = mime.getType(pathname)
         } catch (err) {
-          console.error(err.message)
-          query = '/' + hostname
-          // const mid = pathname.split('/').filter(Boolean).map(data => {return decodeURIComponent(data)})
-          const mid = pathname.split('/').filter(Boolean)
-          if(mid.length){
-            if(mid[mid.length - 1].includes('.')){
-              query = query + '/' + mid.join('/')
-            } else {
-              query = query + '/' + mid.join('/') + '/'
-            }
-          }
+          console.error(err.name)
+          pathname = decodeURIComponent(pathname)
+          query = '/' + hostname + pathname
           mimeType = mime.getType(pathname)
         }
       }
