@@ -30,11 +30,11 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       } else {
         try {
           query = CID.parse(hostname)
-          // mimeType = mime.getType(pathname)
+          mimeType = mime.getType(pathname)
         } catch (err) {
           console.error(err.name)
           pathname = decodeURIComponent(pathname)
-          query = '/' + hostname + pathname
+          query = `/${path.join(hostname, pathname).replace(/\\/g, "/")}`
           mimeType = mime.getType(pathname)
         }
       }
@@ -70,7 +70,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     return result
   }
 
-  async function saveFormData (path, content, useHeaders, useOpts) {
+  async function saveFormData (pathTo, content, useHeaders, useOpts) {
     const {savePath, saveIter} = await new Promise((resolve, reject) => {
       const savePath = []
       const saveIter = []
@@ -90,7 +90,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         reject(error)
       }
       function handleFiles(fieldName, fileData, info){
-        const usePath = path + info.filename
+        const usePath = path.join(pathTo, info.filename).replace(/\\/g, "/")
         savePath.push(usePath)
         saveIter.push(app.files.write(usePath, Readable.from(fileData), useOpts))
       }
@@ -186,13 +186,24 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       const {query: main, mimeType: type} = formatReq(decodeURIComponent(mainHostname), decodeURIComponent(pathname))
 
       if(method === 'HEAD'){
-        let mainData = null
         try {
-          mainData = await app.files.stat(main, {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout})
+          if(reqHeaders['x-pin']){
+            if(reqHeaders['x-pin'] === 'add'){
+              const mainData = await app.pin.add(CID.parse(main), {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout})
+              return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`}, data: []}
+            } else if(reqHeaders['x-pin'] === 'sub'){
+              const mainData = await app.pin.rm(CID.parse(main), {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout})
+              return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`}, data: []}
+            } else {
+              throw new Error('X-Pin header is not correct')
+            }
+          } else {
+            const mainData = await app.files.stat(main, {timeout: reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0' ? Number(reqHeaders['x-timer']) * 1000 : ipfsTimeout})
+            return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: []}
+          }
         } catch (error) {
-          return {statusCode: 400, headers: {'X-Issue': error.message}, data: []}
+          return {statusCode: 400, headers: {'X-Issue': error.name}, data: []}
         }
-        return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: []}
       } else if(method === 'GET'){
         let mainData = null
         try {
