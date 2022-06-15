@@ -14,7 +14,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   const ipfsTimeout = 30000
   const SUPPORTED_METHODS = ['GET', 'HEAD', 'PUT', 'DELETE']
   const encodeType = 'hex'
-  const hostType = '_'
+  const hostType = '~'
 
   function formatReq(hostname, pathname){
 
