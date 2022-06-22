@@ -65,7 +65,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       const ext = item.type === 'file' && item.name.includes('.') ? item.name.slice(item.name.indexOf('.')) : ''
       item.cid = item.cid.toV1().toString()
       item.host = 'ipfs://' + item.cid
-      item.link = 'ipfs://' + item.cid + ext
+      item.link = 'ipfs://' + item.cid + ext + '/'
       result.push(item)
     }
     return result
@@ -121,7 +121,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         const ext = i.includes('.') ? i.slice(i.indexOf('.')) : ''
         useData.cid = useData.cid.toV1().toString()
         useData.host = 'ipfs://' + useData.cid
-        useData.link = useData.host + ext
+        useData.link = useData.host + ext + '/'
         useData.file = i
         result.push(useData)
       } catch (error) {
@@ -139,7 +139,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     try {
       const useData = await app.files.stat(data, opts)
       useData.cid = useData.cid.toV1().toString()
-      useData.link = 'ipfs://' + useData.cid
+      useData.link = 'ipfs://' + useData.cid + '/'
       useData.file = i
       result.push(useData)
     } catch (error) {
@@ -185,21 +185,22 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       }
 
       const {query: main, mimeType: type} = formatReq(decodeURIComponent(mainHostname), decodeURIComponent(pathname))
+      const useTimeOut = (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout
 
       if(method === 'HEAD'){
         try {
           if(reqHeaders['x-pin']){
             if(reqHeaders['x-pin'] === 'add'){
-              const mainData = await app.pin.add(CID.parse(main), {timeout: (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout})
+              const mainData = await app.pin.add(CID.parse(main), {timeout: useTimeOut})
               return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`}, data: []}
             } else if(reqHeaders['x-pin'] === 'sub'){
-              const mainData = await app.pin.rm(CID.parse(main), {timeout: (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout})
+              const mainData = await app.pin.rm(CID.parse(main), {timeout: useTimeOut})
               return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`}, data: []}
             } else {
               throw new Error('X-Pin header is not correct')
             }
           } else {
-            const mainData = await app.files.stat(main, {timeout: (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout})
+            const mainData = await app.files.stat(main, {timeout: useTimeOut})
             return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: []}
           }
         } catch (error) {
@@ -208,7 +209,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       } else if(method === 'GET'){
         let mainData = null
         try {
-          mainData = await app.files.stat(main, {timeout: (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout})
+          mainData = await app.files.stat(main, {timeout: useTimeOut})
         } catch (error) {
           if(!reqHeaders['accept'] || !reqHeaders['accept'].includes('text/html') || !reqHeaders['accept'].includes('application/json')){
             return {statusCode: 400, headers: {'Content-Type': 'text/plain; charset=utf-8', 'X-Issue': error.name}, data: [error.stack]}
@@ -220,7 +221,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         }
         if(mainData.type === 'directory'){
           if(!reqHeaders['accept'] || !reqHeaders['accept'].includes('text/html') || !reqHeaders['accept'].includes('application/json')){
-            const plain = await dirIter(app.files.ls(main, {timeout: (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout}))
+            const plain = await dirIter(app.files.ls(main, {timeout: useTimeOut}))
             let useData = ''
             plain.forEach(data => {
               for(const prop in data){
@@ -230,10 +231,10 @@ module.exports = async function makeIPFSFetch (opts = {}) {
             })
             return {statusCode: 200, headers: {'Content-Type': 'text/plain; charset=utf-8', 'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: [useData]}
           } else if(reqHeaders['accept'].includes('text/html')){
-            const plain = await dirIter(app.files.ls(main, {timeout: (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout}))
+            const plain = await dirIter(app.files.ls(main, {timeout: useTimeOut}))
             return {statusCode: 200, headers: {'Content-Type': 'text/html; charset=utf-8', 'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: [`<html><head><title>Fetch</title></head><body><div>${JSON.stringify(plain)}</div></body></html>`]}
           } else if(reqHeaders['accept'].includes('application/json')){
-            const plain = await dirIter(app.files.ls(main, {timeout: (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout}))
+            const plain = await dirIter(app.files.ls(main, {timeout: useTimeOut}))
             return {statusCode: 200, headers: {'Content-Type': 'application/json; charset=utf-8', 'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: [JSON.stringify(plain)]}
           }
         } else if(mainData.type === 'file'){
@@ -242,12 +243,12 @@ module.exports = async function makeIPFSFetch (opts = {}) {
             if (ranges && ranges.length && ranges.type === 'bytes') {
               const [{ start, end }] = ranges
               const length = (end - start + 1)
-              return {statusCode: 206, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Type': type ? getType(type) : 'text/plain; charset=utf-8', 'Content-Length': `${length}`, 'Content-Range': `bytes ${start}-${end}/${mainData.size}`}, data: app.files.read(main, { offset: start, length, timeout: (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout })}
+              return {statusCode: 206, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Type': type ? getType(type) : 'text/plain; charset=utf-8', 'Content-Length': `${length}`, 'Content-Range': `bytes ${start}-${end}/${mainData.size}`}, data: app.files.read(main, { offset: start, length, timeout: useTimeOut })}
             } else {
-              return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Type': type ? getType(type) : 'text/plain; charset=utf-8', 'Content-Length': `${mainData.size}`}, data: app.files.read(main, { timeout: (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout })}
+              return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Type': type ? getType(type) : 'text/plain; charset=utf-8', 'Content-Length': `${mainData.size}`}, data: app.files.read(main, { timeout: useTimeOut })}
             }
           } else {
-            return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Type': type ? getType(type) : 'text/plain; charset=utf-8', 'Content-Length': `${mainData.size}`}, data: app.files.read(main, { timeout: (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout })}
+            return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Type': type ? getType(type) : 'text/plain; charset=utf-8', 'Content-Length': `${mainData.size}`}, data: app.files.read(main, { timeout: useTimeOut })}
           }
         } else {
           throw new Error('not a directory or file')
@@ -256,11 +257,11 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         let mainData = null
         try {
           if(reqHeaders['content-type'] && reqHeaders['content-type'].includes('multipart/form-data')){
-            mainData = await saveFormData(main, body, reqHeaders, reqHeaders['x-opt'] || searchParams.has('x-opt') ? {...JSON.parse(reqHeaders['x-opt'] || decodeURIComponent(searchParams.get('x-opt'))), ...{timeout: (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false}} : {timeout: (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false})
-            mainData = await iterFiles(mainData, {timeout: (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout})
+            mainData = await saveFormData(main, body, reqHeaders, reqHeaders['x-opt'] || searchParams.has('x-opt') ? {...JSON.parse(reqHeaders['x-opt'] || decodeURIComponent(searchParams.get('x-opt'))), ...{timeout: useTimeOut, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false}} : {timeout: useTimeOut, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false})
+            mainData = await iterFiles(mainData, {timeout: useTimeOut})
           } else {
-            await app.files.write(main, body, reqHeaders['x-opt'] || searchParams.has('x-opt') ? {...JSON.parse(reqHeaders['x-opt'] || decodeURIComponent(searchParams.get('x-opt'))), ...{timeout: (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false}} : {timeout: (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false})
-            mainData = await iterFile(main, {timeout: (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout})
+            await app.files.write(main, body, reqHeaders['x-opt'] || searchParams.has('x-opt') ? {...JSON.parse(reqHeaders['x-opt'] || decodeURIComponent(searchParams.get('x-opt'))), ...{timeout: useTimeOut, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false}} : {timeout: useTimeOut, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false})
+            mainData = await iterFile(main, {timeout: useTimeOut})
           }
         } catch (error) {
           if(!reqHeaders['accept'] || !reqHeaders['accept'].includes('text/html') || !reqHeaders['accept'].includes('application/json')){
@@ -288,9 +289,9 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       } else if(method === 'DELETE'){
         let mainData = null
         try {
-          mainData = await app.files.stat(main, {timeout: (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout})
+          mainData = await app.files.stat(main, {timeout: useTimeOut})
           mainData.cid = mainData.cid.toV1().toString()
-          mainData.link = 'ipfs://' + mainData.cid
+          mainData.link = 'ipfs://' + mainData.cid + '/'
         } catch (error) {
           if(!reqHeaders['accept'] || !reqHeaders['accept'].includes('text/html') || !reqHeaders['accept'].includes('application/json')){
             return {statusCode: 400, headers: {'Content-Type': 'text/plain; charset=utf-8', 'X-Issue': error.name}, data: [error.message]}
@@ -301,9 +302,9 @@ module.exports = async function makeIPFSFetch (opts = {}) {
           }
         }
         if(mainData.type === 'directory'){
-          await app.files.rm(main, {cidVersion: 1, recursive: true, timeout: (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout})
+          await app.files.rm(main, {cidVersion: 1, recursive: true, timeout: useTimeOut})
         } else if(mainData.type === 'file'){
-          await app.files.rm(main, {cidVersion: 1, timeout: (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout})
+          await app.files.rm(main, {cidVersion: 1, timeout: useTimeOut})
         } else {
           throw new Error('not a directory or file')
         }
