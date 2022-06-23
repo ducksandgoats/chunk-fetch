@@ -38,7 +38,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         }
       }
     }
-    return {query, mimeType}
+    return {query, mimeType, ext: hostname.includes('.') ? hostname.slice(hostname.indexOf('.')) : ''}
   }
 
   // function getMime (path) {
@@ -184,24 +184,20 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         return { statusCode: 409, headers: {}, data: ['something wrong with hostname'] }
       }
 
-      const {query: main, mimeType: type} = formatReq(decodeURIComponent(mainHostname), decodeURIComponent(pathname))
+      const {query: main, mimeType: type, ext} = formatReq(decodeURIComponent(mainHostname), decodeURIComponent(pathname))
       const useTimeOut = (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout
 
       if(method === 'HEAD'){
         try {
-          if(reqHeaders['x-pin']){
-            if(reqHeaders['x-pin'] === 'add'){
-              const mainData = await app.pin.add(CID.parse(main), {timeout: useTimeOut})
-              return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`}, data: []}
-            } else if(reqHeaders['x-pin'] === 'sub'){
-              const mainData = await app.pin.rm(CID.parse(main), {timeout: useTimeOut})
-              return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`}, data: []}
-            } else {
-              throw new Error('X-Pin header is not correct')
-            }
+          if(reqHeaders['x-pin'] && reqHeaders['x-pin'] === 'true'){
+            const mainData = await app.pin.add(main, {timeout: useTimeOut})
+            return {statusCode: 200, headers: {'X-Data': `${mainData.cid.toV1().toString()}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}/>; rel="canonical"`}, data: []}
+          } else if(reqHeaders['x-unpin'] && reqHeaders['x-unpin'] === 'true'){
+            const mainData = await app.pin.rm(main, {timeout: useTimeOut})
+            return {statusCode: 200, headers: {'X-Data': `${mainData.cid.toV1().toString()}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}/>; rel="canonical"`}, data: []}
           } else {
             const mainData = await app.files.stat(main, {timeout: useTimeOut})
-            return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: []}
+            return {statusCode: 200, headers: {'X-Data': `${mainData.cid.toV1().toString()}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}/>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: []}
           }
         } catch (error) {
           return {statusCode: 400, headers: {'X-Issue': error.name}, data: []}
