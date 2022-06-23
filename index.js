@@ -234,8 +234,9 @@ module.exports = async function makeIPFSFetch (opts = {}) {
             return {statusCode: 200, headers: {'Content-Type': 'application/json; charset=utf-8', 'Link': `<ipfs://${mainData.cid.toV1().toString()}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: [JSON.stringify(plain)]}
           }
         } else if(mainData.type === 'file'){
-          if(reqHeaders.Range || reqHeaders.range){
-            const ranges = parseRange(size, isRanged)
+          const isRanged = reqHeaders.Range || reqHeaders.range
+          if(isRanged){
+            const ranges = parseRange(mainData.size, isRanged)
             if (ranges && ranges.length && ranges.type === 'bytes') {
               const [{ start, end }] = ranges
               const length = (end - start + 1)
