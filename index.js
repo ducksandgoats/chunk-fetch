@@ -29,7 +29,8 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         query = `/${path.join(hostname, pathname).replace(/\\/g, "/")}`
       }
     }
-    return {query, mimeType: mime.getType(pathname), ext: pathname.includes('.') ? pathname.slice(pathname.indexOf('.')) : ''}
+    const lastSlash = pathname.slice(pathname.lastIndexOf('/')).slice(1)
+    return {query, mimeType: mime.getType(lastSlash), ext: lastSlash.indexOf('.') !== -1 ? lastSlash.slice(lastSlash.indexOf('.')) : ''}
   }
 
   // function getMime (path) {
