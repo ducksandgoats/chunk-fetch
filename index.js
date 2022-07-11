@@ -174,6 +174,9 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       const {query: main, mimeType: type, ext} = formatReq(decodeURIComponent(mainHostname), decodeURIComponent(pathname))
       const useTimeOut = (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout
 
+      const mainReq = !reqHeaders.accept || !reqHeaders.accept.includes('application/json')
+      const mainRes = mainReq ? 'text/html; charset=utf-8' : 'application/json; charset=utf-8'
+
       if(method === 'HEAD'){
         try {
           if(reqHeaders['x-pin'] && reqHeaders['x-pin'] === 'true'){
@@ -194,32 +197,11 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         try {
           mainData = await app.files.stat(main, {timeout: useTimeOut})
         } catch (error) {
-          if(!reqHeaders['accept'] || !reqHeaders['accept'].includes('text/html') || !reqHeaders['accept'].includes('application/json')){
-            return {statusCode: 400, headers: {'Content-Type': 'text/plain; charset=utf-8', 'X-Issue': error.name}, data: [error.stack]}
-          } else if(reqHeaders['accept'].includes('text/html')){
-            return {statusCode: 400, headers: {'Content-Type': 'text/html; charset=utf-8', 'X-Issue': error.name}, data: [`<html><head><title>Fetch</title></head><body><div>${error.stack}</div></body></html>`]}
-          } else if(reqHeaders['accept'].includes('application/json')){
-            return {statusCode: 400, headers: {'Content-Type': 'application/json; charset=utf-8', 'X-Issue': error.name}, data: [JSON.stringify(error.stack)]}
-          }
+          return {statusCode: 400, headers: {'Content-Type': mainRes, 'X-Issue': error.name}, data: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${error.stack}</div></body></html>`] : [JSON.stringify(error.stack)]}
         }
         if(mainData.type === 'directory'){
-          if(!reqHeaders['accept'] || !reqHeaders['accept'].includes('text/html') || !reqHeaders['accept'].includes('application/json')){
-            const plain = await dirIter(app.files.ls(main, {timeout: useTimeOut}))
-            let useData = ''
-            plain.forEach(data => {
-              for(const prop in data){
-                useData += `${prop}: ${data[prop]}\n`
-              }
-              useData += '\n\n\n'
-            })
-            return {statusCode: 200, headers: {'Content-Type': 'text/plain; charset=utf-8', 'Link': `<ipfs://${mainData.cid.toV1().toString()}/>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: [useData]}
-          } else if(reqHeaders['accept'].includes('text/html')){
-            const plain = await dirIter(app.files.ls(main, {timeout: useTimeOut}))
-            return {statusCode: 200, headers: {'Content-Type': 'text/html; charset=utf-8', 'Link': `<ipfs://${mainData.cid.toV1().toString()}/>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: [`<html><head><title>Fetch</title></head><body><div>${JSON.stringify(plain)}</div></body></html>`]}
-          } else if(reqHeaders['accept'].includes('application/json')){
-            const plain = await dirIter(app.files.ls(main, {timeout: useTimeOut}))
-            return {statusCode: 200, headers: {'Content-Type': 'application/json; charset=utf-8', 'Link': `<ipfs://${mainData.cid.toV1().toString()}/>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: [JSON.stringify(plain)]}
-          }
+          const plain = await dirIter(app.files.ls(main, {timeout: useTimeOut}))
+          return {statusCode: 200, headers: {'Content-Type': mainRes, 'Link': `<ipfs://${mainData.cid.toV1().toString()}/>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${JSON.stringify(plain)}</div></body></html>`] : [JSON.stringify(plain)]}
         } else if(mainData.type === 'file'){
           const isRanged = reqHeaders.Range || reqHeaders.range
           if(isRanged){
@@ -240,36 +222,18 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       } else if(method === 'PUT'){
         let mainData = null
         try {
+          const hasOpt = reqHeaders['x-opt'] || searchParams.has('x-opt')
+          const useOpt = hasOpt ? JSON.parse(reqHeaders['x-opt'] || decodeURIComponent(searchParams.get('x-opt'))) : {}
           if(reqHeaders['content-type'] && reqHeaders['content-type'].includes('multipart/form-data')){
-            mainData = await saveFormData(main, body, reqHeaders, reqHeaders['x-opt'] || searchParams.has('x-opt') ? {...JSON.parse(reqHeaders['x-opt'] || decodeURIComponent(searchParams.get('x-opt'))), ...{timeout: useTimeOut, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false}} : {timeout: useTimeOut, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false})
-            mainData = await iterFiles(mainData, {timeout: useTimeOut})
+            mainData = await iterFiles(await saveFormData(main, body, reqHeaders, {...useOpt, timeout: useTimeOut, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false}), {timeout: useTimeOut})
           } else {
-            await app.files.write(main, body, reqHeaders['x-opt'] || searchParams.has('x-opt') ? {...JSON.parse(reqHeaders['x-opt'] || decodeURIComponent(searchParams.get('x-opt'))), ...{timeout: useTimeOut, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false}} : {timeout: useTimeOut, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false})
+            await app.files.write(main, body, {...useOpt, timeout: useTimeOut, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false})
             mainData = await iterFile(main, {timeout: useTimeOut})
           }
         } catch (error) {
-          if(!reqHeaders['accept'] || !reqHeaders['accept'].includes('text/html') || !reqHeaders['accept'].includes('application/json')){
-            return {statusCode: 400, headers: {'Content-Type': 'text/plain; charset=utf-8', 'X-Issue': error.name}, data: [error.message]}
-          } else if(reqHeaders['accept'].includes('text/html')){
-            return {statusCode: 400, headers: {'Content-Type': 'text/html; charset=utf-8', 'X-Issue': error.name}, data: [`<html><head><title>Fetch</title></head><body><div>${error.message}</div></body></html>`]}
-          } else if(reqHeaders['accept'].includes('application/json')){
-            return {statusCode: 400, headers: {'Content-Type': 'application/json; charset=utf-8', 'X-Issue': error.name}, data: [JSON.stringify(error.message)]}
-          }
+          return {statusCode: 400, headers: {'Content-Type': mainRes, 'X-Issue': error.name}, data: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${error.message}</div></body></html>`] : [JSON.stringify(error.message)]}
         }
-        if((!reqHeaders['accept']) || (!reqHeaders['accept'].includes('text/html') && !reqHeaders['accept'].includes('application/json'))){
-          let useData = ''
-          mainData.forEach(data => {
-            for(const prop in data){
-              useData += `${prop}: ${data[prop]}\n`
-            }
-            useData += '\n\n\n'
-          })
-          return {statusCode: 200, headers: {'Content-Type': 'text/plain; charset=utf-8'}, data: [useData]}
-        } else if(reqHeaders['accept'].includes('text/html')){
-          return {statusCode: 200, headers: {'Content-Type': 'text/html; charset=utf-8'}, data: [`<html><head><title>Fetch</title></head><body><div>${JSON.stringify(mainData)}</div></body></html>`]}
-        } else if(reqHeaders['accept'].includes('application/json')){
-          return {statusCode: 200, headers: {'Content-Type': 'application/json; charset=utf-8'}, data: [JSON.stringify(mainData)]}
-        }
+        return {statusCode: 200, headers: {'Content-Type': mainRes}, data: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${JSON.stringify(mainData)}</div></body></html>`] : [JSON.stringify(mainData)]}
       } else if(method === 'DELETE'){
         let mainData = null
         try {
@@ -277,13 +241,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
           mainData.cid = mainData.cid.toV1().toString()
           mainData.link = 'ipfs://' + mainData.cid + '/'
         } catch (error) {
-          if(!reqHeaders['accept'] || !reqHeaders['accept'].includes('text/html') || !reqHeaders['accept'].includes('application/json')){
-            return {statusCode: 400, headers: {'Content-Type': 'text/plain; charset=utf-8', 'X-Issue': error.name}, data: [error.message]}
-          } else if(reqHeaders['accept'].includes('text/html')){
-            return {statusCode: 400, headers: {'Content-Type': 'text/html; charset=utf-8', 'X-Issue': error.name}, data: [`<html><head><title>Fetch</title></head><body><div>${error.message}</div></body></html>`]}
-          } else if(reqHeaders['accept'].includes('application/json')){
-            return {statusCode: 400, headers: {'Content-Type': 'application/json; charset=utf-8', 'X-Issue': error.name}, data: [JSON.stringify(error.message)]}
-          }
+          return {statusCode: 400, headers: {'Content-Type': mainRes, 'X-Issue': error.name}, data: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${error.message}</div></body></html>`] : [JSON.stringify(error.message)]}
         }
         if(mainData.type === 'directory'){
           await app.files.rm(main, {cidVersion: 1, recursive: true, timeout: useTimeOut})
@@ -292,28 +250,14 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         } else {
           throw new Error('not a directory or file')
         }
-        if(!reqHeaders['accept'] || !reqHeaders['accept'].includes('text/html') || !reqHeaders['accept'].includes('application/json')){
-          let useData = ''
-          for(const prop in mainData){
-            useData += `${prop}: ${mainData[prop]}\n`
-          }
-          return {statusCode: 200, headers: {'Content-Type': 'text/plain; charset=utf-8'}, data: [useData]}
-        } else if(reqHeaders['accept'].includes('text/html')){
-          return {statusCode: 200, headers: {'Content-Type': 'text/html; charset=utf-8'}, data: [`<html><head><title>Fetch</title></head><body><div>${JSON.stringify(mainData)}</div></body></html>`]}
-        } else if(reqHeaders['accept'].includes('application/json')){
-          return {statusCode: 200, headers: {'Content-Type': 'application/json; charset=utf-8'}, data: [JSON.stringify(mainData)]}
-        }
+        return {statusCode: 200, headers: {'Content-Type': mainRes}, data: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${JSON.stringify(mainData)}</div></body></html>`] : [JSON.stringify(mainData)]}
       } else {
-        return {statusCode: 400, headers: {}, data: ['wrong method']}
+        return {statusCode: 400, headers: {'Content-Type': mainRes}, data: mainReq ? [`<html><head><title>Fetch</title></head><body><div>wrong method</div></body></html>`] : [JSON.stringify('wrong method')]}
       }
     } catch (error) {
-      if(!reqHeaders['accept'] || !reqHeaders['accept'].includes('text/html') || !reqHeaders['accept'].includes('application/json')){
-        return {statusCode: 500, headers: {'Content-Type': 'text/plain; charset=utf-8'}, data: [error.stack]}
-      } else if(reqHeaders['accept'].includes('text/html')){
-        return {statusCode: 500, headers: {'Content-Type': 'text/html; charset=utf-8'}, data: [`<html><head><title>${error.name}</title></head><body><div><p>${error.stack}</p></div></body></html>`]}
-      } else if(reqHeaders['accept'].includes('application/json')){
-        return {statusCode: 500, headers: {'Content-Type': 'application/json; charset=utf-8'}, data: [JSON.stringify(error.stack)]}
-      }
+      const mainReq = !reqHeaders.accept || !reqHeaders.accept.includes('application/json')
+      const mainRes = mainReq ? 'text/html; charset=utf-8' : 'application/json; charset=utf-8'
+      return {statusCode: 500, headers: {'Content-Type': mainRes}, data: mainReq ? [`<html><head><title>${error.name}</title></head><body><div><p>${error.stack}</p></div></body></html>`] : [JSON.stringify(error.stack)]}
     }
   })
 
