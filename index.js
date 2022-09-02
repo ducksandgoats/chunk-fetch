@@ -106,16 +106,16 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       try {
         const useData = await app.files.stat(i, opts)
         const ext = i.includes('.') ? i.slice(i.indexOf('.')) : ''
-        useData.cid = useData.cid.toV1().toString()
-        useData.host = 'ipfs://' + useData.cid
-        useData.link = useData.host + '/' + ext
-        useData.file = i
-        result.push(useData)
-      } catch (error) {
-        console.error(typeof(error))
-        const useData = {}
-        useData.file = i
-        result.push(useData)
+        // useData.cid = useData.cid.toV1().toString()
+        // useData.host = 'ipfs://' + useData.cid
+        // useData.link = useData.host + '/' + ext
+        // useData.file = i
+        result.push('ipfs://' + useData.cid.toV1().toString() + '/' + ext)
+      } catch (err){
+        console.error(err)
+        // const useData = {}
+        // useData.file = i
+        // result.push(useData)
       }
     }
     return result
@@ -125,15 +125,15 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     const result = []
     try {
       const useData = await app.files.stat(data, opts)
-      useData.cid = useData.cid.toV1().toString()
-      useData.link = 'ipfs://' + useData.cid + '/'
-      useData.file = i
-      result.push(useData)
-    } catch (error) {
-      console.error(typeof(error))
-      const useData = {}
-      useData.file = i
-      result.push(useData)
+      // useData.cid = useData.cid.toV1().toString()
+      // useData.link = 'ipfs://' + useData.cid + '/'
+      // useData.file = i
+      result.push('ipfs://' + useData.cid.toV1().toString() + '/')
+    } catch (err) {
+      console.error(err)
+      // const useData = {}
+      // useData.file = i
+      // result.push(useData)
     }
     return result
   }
