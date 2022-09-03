@@ -11,7 +11,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   const finalOpts = { ...DEFAULT_OPTS, ...opts }
   const app = await (async (finalOpts) => {if(finalOpts.ipfs){return finalOpts.ipfs}else{const IPFS = await import('ipfs-core');return await IPFS.create(finalOpts)}})(finalOpts)
   const ipfsTimeout = 30000
-  const SUPPORTED_METHODS = ['GET', 'HEAD', 'PUT', 'DELETE']
+  const SUPPORTED_METHODS = ['GET', 'HEAD', 'POST', 'DELETE']
   const encodeType = 'hex'
   const hostType = '_'
 
@@ -106,16 +106,16 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       try {
         const useData = await app.files.stat(i, opts)
         const ext = i.includes('.') ? i.slice(i.indexOf('.')) : ''
-        // useData.cid = useData.cid.toV1().toString()
-        // useData.host = 'ipfs://' + useData.cid
-        // useData.link = useData.host + '/' + ext
-        // useData.file = i
-        result.push('ipfs://' + useData.cid.toV1().toString() + '/' + ext)
+        useData.cid = useData.cid.toV1().toString()
+        useData.host = 'ipfs://' + useData.cid
+        useData.link = useData.host + '/' + ext
+        useData.file = i
+        result.push(useData)
       } catch (err){
         console.error(err)
-        // const useData = {}
-        // useData.file = i
-        // result.push(useData)
+        const useData = {error: err}
+        useData.file = i
+        result.push(useData)
       }
     }
     return result
@@ -125,15 +125,15 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     const result = []
     try {
       const useData = await app.files.stat(data, opts)
-      // useData.cid = useData.cid.toV1().toString()
-      // useData.link = 'ipfs://' + useData.cid + '/'
-      // useData.file = i
-      result.push('ipfs://' + useData.cid.toV1().toString() + '/')
+      useData.cid = useData.cid.toV1().toString()
+      useData.link = 'ipfs://' + useData.cid + '/'
+      useData.file = i
+      result.push(useData)
     } catch (err) {
       console.error(err)
-      // const useData = {}
-      // useData.file = i
-      // result.push(useData)
+      const useData = {error: err}
+      useData.file = i
+      result.push(useData)
     }
     return result
   }
@@ -219,7 +219,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         } else {
           throw new Error('not a directory or file')
         }
-      } else if(method === 'PUT'){
+      } else if(method === 'POST'){
         let mainData = null
         try {
           const hasOpt = reqHeaders['x-opt'] || searchParams.has('x-opt')
