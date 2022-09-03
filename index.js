@@ -105,10 +105,10 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     for(const i of data){
       try {
         const useData = await app.files.stat(i, opts)
-        const ext = i.includes('.') ? i.slice(i.indexOf('.')) : ''
+        const kind = i.includes('.') ? i.slice(i.indexOf('.')) : ''
         useData.cid = useData.cid.toV1().toString()
         useData.host = 'ipfs://' + useData.cid
-        useData.link = useData.host + '/' + ext
+        useData.link = useData.host + '/' + kind
         useData.file = i
         result.push(useData)
       } catch (err){
@@ -121,12 +121,12 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     return result
   }
 
-  async function iterFile(data, opts){
+  async function iterFile(data, kind, opts){
     const result = []
     try {
       const useData = await app.files.stat(data, opts)
       useData.cid = useData.cid.toV1().toString()
-      useData.link = 'ipfs://' + useData.cid + '/'
+      useData.link = 'ipfs://' + useData.cid + '/' + kind
       useData.file = i
       result.push(useData)
     } catch (err) {
@@ -228,7 +228,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
             mainData = await iterFiles(await saveFormData(main, body, reqHeaders, {...useOpt, timeout: useTimeOut, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false}), {timeout: useTimeOut})
           } else {
             await app.files.write(main, body, {...useOpt, timeout: useTimeOut, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false})
-            mainData = await iterFile(main, {timeout: useTimeOut})
+            mainData = await iterFile(main, ext, {timeout: useTimeOut})
           }
         } catch (error) {
           return {statusCode: 400, headers: {'Content-Type': mainRes, 'X-Issue': error.name}, data: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${error.message}</div></body></html>`] : [JSON.stringify(error.message)]}
