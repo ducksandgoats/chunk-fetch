@@ -239,6 +239,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         try {
           mainData = await app.files.stat(main, {timeout: useTimeOut})
           mainData.cid = mainData.cid.toV1().toString()
+          mainData.id = mainData.cid
           mainData.link = 'ipfs://' + mainData.cid + '/'
         } catch (error) {
           return {statusCode: 400, headers: {'Content-Type': mainRes, 'X-Issue': error.name}, data: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${error.message}</div></body></html>`] : [JSON.stringify(error.message)]}
