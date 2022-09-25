@@ -96,7 +96,10 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     // We collect the promises (all files are queued for upload)
     // Then we wait for all of them to resolve
     // await Promise.all(await collect(toUpload))
-    await Promise.all(saveIter)
+    // await Promise.all(saveIter)
+    for(const test of saveIter){
+      await test
+    }
     return savePath
   }
 
@@ -240,7 +243,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
           mainData = await app.files.stat(main, {timeout: useTimeOut})
           mainData.cid = mainData.cid.toV1().toString()
           mainData.id = mainData.cid
-          mainData.link = 'ipfs://' + mainData.cid + '/'
+          mainData.link = 'ipfs://' + mainData.cid + '/' + ext
         } catch (error) {
           return {statusCode: 400, headers: {'Content-Type': mainRes, 'X-Issue': error.name}, data: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${error.message}</div></body></html>`] : [JSON.stringify(error.message)]}
         }
