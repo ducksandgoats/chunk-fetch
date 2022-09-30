@@ -52,7 +52,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       const ext = item.type === 'file' && item.name.includes('.') ? item.name.slice(item.name.indexOf('.')) : ''
       item.cid = item.cid.toV1().toString()
       item.host = 'ipfs://' + item.cid
-      item.link = 'ipfs://' + item.cid + '/' + ext
+      item.link = item.host + '/' + ext
       result.push(item)
     }
     return result
