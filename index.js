@@ -182,12 +182,14 @@ module.exports = async function makeIPFSFetch (opts = {}) {
 
       if(method === 'HEAD'){
         try {
-          if(reqHeaders['x-pin'] && reqHeaders['x-pin'] === 'true'){
-            const mainData = await app.pin.add(main, {timeout: useTimeOut})
-            return {statusCode: 200, headers: {'X-Data': `${mainData.cid.toV1().toString()}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}/${ext}>; rel="canonical"`}, data: []}
-          } else if(reqHeaders['x-unpin'] && reqHeaders['x-unpin'] === 'true'){
-            const mainData = await app.pin.rm(main, {timeout: useTimeOut})
-            return {statusCode: 200, headers: {'X-Data': `${mainData.cid.toV1().toString()}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}/${ext}>; rel="canonical"`}, data: []}
+          if(reqHeaders['x-pin']){
+            if(JSON.parse(reqHeaders['x-pin'])){
+              const mainData = await app.pin.add(main, {timeout: useTimeOut})
+              return {statusCode: 200, headers: {'X-Data': `${mainData.cid.toV1().toString()}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}/${ext}>; rel="canonical"`}, data: []}
+            } else {
+              const mainData = await app.pin.rm(main, {timeout: useTimeOut})
+              return {statusCode: 200, headers: {'X-Data': `${mainData.cid.toV1().toString()}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}/${ext}>; rel="canonical"`}, data: []}
+            }
           } else {
             const mainData = await app.files.stat(main, {timeout: useTimeOut})
             return {statusCode: 200, headers: {'X-Data': `${mainData.cid.toV1().toString()}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}/${ext}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: []}
