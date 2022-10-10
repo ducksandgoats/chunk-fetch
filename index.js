@@ -29,8 +29,8 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         query = `/${path.join(hostname, pathname).replace(/\\/g, "/")}`
       }
     }
-    const lastSlash = pathname.slice(pathname.lastIndexOf('/')).slice(1)
-    return {query, mimeType: mime.getType(lastSlash), ext: lastSlash.indexOf('.') !== -1 ? lastSlash.slice(lastSlash.indexOf('.')) : ''}
+    const lastSlash = pathname.slice(pathname.lastIndexOf('/'))
+    return {query, mimeType: mime.getType(lastSlash), ext: lastSlash}
   }
 
   // function getMime (path) {
@@ -49,10 +49,13 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   async function dirIter (iterable) {
     const result = []
     for await (const item of iterable) {
-      const ext = item.type === 'file' && item.name.includes('.') ? item.name.slice(item.name.indexOf('.')) : ''
+      // const kind = item.type === 'file' ? item.name : ''
+      if(item.type === 'file'){
+        item.kind = '/' + item.name
+      }
       item.cid = item.cid.toV1().toString()
       item.host = 'ipfs://' + item.cid
-      item.link = item.host + '/' + ext
+      item.link = item.host + item.kind
       result.push(item)
     }
     return result
@@ -108,10 +111,10 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     for(const i of data){
       try {
         const useData = await app.files.stat(i, opts)
-        const kind = i.includes('.') ? i.slice(i.indexOf('.')) : ''
+        const kind = i.slice(i.lastIndexOf('/'))
         useData.cid = useData.cid.toV1().toString()
         useData.host = 'ipfs://' + useData.cid
-        useData.link = useData.host + '/' + kind
+        useData.link = useData.host + kind
         useData.file = i
         result.push(useData)
       } catch (err){
@@ -129,7 +132,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     try {
       const useData = await app.files.stat(data, opts)
       useData.cid = useData.cid.toV1().toString()
-      useData.link = 'ipfs://' + useData.cid + '/' + kind
+      useData.link = 'ipfs://' + useData.cid + kind
       useData.file = i
       result.push(useData)
     } catch (err) {
@@ -185,14 +188,14 @@ module.exports = async function makeIPFSFetch (opts = {}) {
           if(reqHeaders['x-pin']){
             if(JSON.parse(reqHeaders['x-pin'])){
               const mainData = await app.pin.add(main, {timeout: useTimeOut})
-              return {statusCode: 200, headers: {'X-Data': `${mainData.cid.toV1().toString()}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}/${ext}>; rel="canonical"`}, data: []}
+              return {statusCode: 200, headers: {'X-Data': `${mainData.cid.toV1().toString()}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`}, data: []}
             } else {
               const mainData = await app.pin.rm(main, {timeout: useTimeOut})
-              return {statusCode: 200, headers: {'X-Data': `${mainData.cid.toV1().toString()}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}/${ext}>; rel="canonical"`}, data: []}
+              return {statusCode: 200, headers: {'X-Data': `${mainData.cid.toV1().toString()}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`}, data: []}
             }
           } else {
             const mainData = await app.files.stat(main, {timeout: useTimeOut})
-            return {statusCode: 200, headers: {'X-Data': `${mainData.cid.toV1().toString()}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}/${ext}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: []}
+            return {statusCode: 200, headers: {'X-Data': `${mainData.cid.toV1().toString()}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: []}
           }
         } catch (error) {
           return {statusCode: 400, headers: {'X-Issue': error.name}, data: []}
@@ -214,12 +217,12 @@ module.exports = async function makeIPFSFetch (opts = {}) {
             if (ranges && ranges.length && ranges.type === 'bytes') {
               const [{ start, end }] = ranges
               const length = (end - start + 1)
-              return {statusCode: 206, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}/${ext}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${length}`, 'Content-Range': `bytes ${start}-${end}/${mainData.size}`}, data: app.files.read(main, { offset: start, length, timeout: useTimeOut })}
+              return {statusCode: 206, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${length}`, 'Content-Range': `bytes ${start}-${end}/${mainData.size}`}, data: app.files.read(main, { offset: start, length, timeout: useTimeOut })}
             } else {
-              return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}/${ext}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${mainData.size}`}, data: app.files.read(main, { timeout: useTimeOut })}
+              return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${mainData.size}`}, data: app.files.read(main, { timeout: useTimeOut })}
             }
           } else {
-            return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}/${ext}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${mainData.size}`}, data: app.files.read(main, { timeout: useTimeOut })}
+            return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${mainData.size}`}, data: app.files.read(main, { timeout: useTimeOut })}
           }
         } else {
           throw new Error('not a directory or file')
@@ -245,7 +248,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
           mainData = await app.files.stat(main, {timeout: useTimeOut})
           mainData.cid = mainData.cid.toV1().toString()
           mainData.id = mainData.cid
-          mainData.link = 'ipfs://' + mainData.cid + '/' + ext
+          mainData.link = 'ipfs://' + mainData.cid + ext
         } catch (error) {
           return {statusCode: 400, headers: {'Content-Type': mainRes, 'X-Issue': error.name}, data: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${error.message}</div></body></html>`] : [JSON.stringify(error.message)]}
         }
