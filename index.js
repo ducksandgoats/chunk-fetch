@@ -15,6 +15,11 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   const encodeType = 'hex'
   const hostType = '_'
 
+  function takeCareOfIt(data){
+    console.log(data)
+    throw new Error('aborted')
+  }
+
   function formatReq(hostname, pathname){
 
     pathname = decodeURIComponent(pathname)
@@ -163,18 +168,39 @@ module.exports = async function makeIPFSFetch (opts = {}) {
 
   const fetch = makeFetch(async (request) => {
 
-    const { url, headers: reqHeaders, method, body } = request
+    const { url, headers: reqHeaders, method, body, signal } = request
+
+    if(signal){
+      signal.addEventListener('abort', takeCareOfIt)
+    }
     
     try {
       const { hostname, pathname, protocol, search, searchParams } = new URL(url)
       const mainHostname = hostname && hostname.startsWith(encodeType) ? Buffer.from(hostname.slice(encodeType.length), 'hex').toString('utf-8') : hostname
 
+      let isItBad = false
+      const badObj = {}
       if (protocol !== 'ipfs:') {
-        return { statusCode: 409, headers: {}, data: ['wrong protocol'] }
+        isItBad = true
+        badObj.statusCode = 409
+        badObj.headers = {}
+        badObj.data = ['wrong protocol']
       } else if (!method || !SUPPORTED_METHODS.includes(method)) {
-        return { statusCode: 409, headers: {}, data: ['something wrong with method'] }
+        isItBad = true
+        badObj.statusCode = 409
+        badObj.headers = {}
+        badObj.data = ['something wrong with method']
       } else if ((!mainHostname) || ((mainHostname.length === 1) && (pathname.split('/').filter(Boolean).length > 1 || mainHostname !== hostType))) {
-        return { statusCode: 409, headers: {}, data: ['something wrong with hostname'] }
+        isItBad = true
+        badObj.statusCode = 409
+        badObj.headers = {}
+        badObj.data = ['something wrong with hostname']
+      }
+      if(isItBad){
+        if(signal){
+          signal.removeEventListener('abort', takeCareOfIt)
+        }
+        return badObj
       }
 
       const {query: main, mimeType: type, ext} = formatReq(decodeURIComponent(mainHostname), decodeURIComponent(pathname))
@@ -184,32 +210,55 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       const mainRes = mainReq ? 'text/html; charset=utf-8' : 'application/json; charset=utf-8'
 
       if(method === 'HEAD'){
+        const mainObj = {}
         try {
           if(reqHeaders['x-pin']){
             if(JSON.parse(reqHeaders['x-pin'])){
               const mainData = await app.pin.add(main, {timeout: useTimeOut})
-              return {statusCode: 200, headers: {'X-Data': `${mainData.cid.toV1().toString()}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`}, data: []}
+
+              mainObj.statusCode = 200
+              mainObj.headers = {'X-Data': `${mainData.cid.toV1().toString()}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`}
+              mainObj.data = []
             } else {
               const mainData = await app.pin.rm(main, {timeout: useTimeOut})
-              return {statusCode: 200, headers: {'X-Data': `${mainData.cid.toV1().toString()}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`}, data: []}
+
+              mainObj.statusCode = 200
+              mainObj.headers = {'X-Data': `${mainData.cid.toV1().toString()}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`}
+              mainObj.data = []
             }
           } else {
             const mainData = await app.files.stat(main, {timeout: useTimeOut})
-            return {statusCode: 200, headers: {'X-Data': `${mainData.cid.toV1().toString()}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: []}
+
+            mainObj.statusCode = 200
+            mainObj.headers = {'X-Data': `${mainData.cid.toV1().toString()}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}
+            mainObj.data = []
           }
         } catch (error) {
-          return {statusCode: 400, headers: {'X-Issue': error.name}, data: []}
+          mainObj.statusCode = 400
+          mainObj.headers = {'X-Issue': error.name}
+          mainObj.data = []
         }
+        if(signal){
+          signal.removeEventListener('abort', takeCareOfIt)
+        }
+        return mainObj
       } else if(method === 'GET'){
+        const mainObj = {}
         let mainData = null
         try {
           mainData = await app.files.stat(main, {timeout: useTimeOut})
         } catch (error) {
+          if(signal){
+            signal.removeEventListener('abort', takeCareOfIt)
+          }
           return {statusCode: 400, headers: {'Content-Type': mainRes, 'X-Issue': error.name}, data: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${error.stack}</div></body></html>`] : [JSON.stringify(error.stack)]}
         }
         if(mainData.type === 'directory'){
           const plain = await dirIter(app.files.ls(main, {timeout: useTimeOut}))
-          return {statusCode: 200, headers: {'Content-Type': mainRes, 'Link': `<ipfs://${mainData.cid.toV1().toString()}/>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, data: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${JSON.stringify(plain)}</div></body></html>`] : [JSON.stringify(plain)]}
+
+          mainObj.statusCode = 200
+          mainObj.headers = {'Content-Type': mainRes, 'Link': `<ipfs://${mainData.cid.toV1().toString()}/>; rel="canonical"`, 'Content-Length': `${mainData.size}`}
+          mainObj.data = mainReq ? [`<html><head><title>Fetch</title></head><body><div>${JSON.stringify(plain)}</div></body></html>`] : [JSON.stringify(plain)]
         } else if(mainData.type === 'file'){
           const isRanged = reqHeaders.Range || reqHeaders.range
           if(isRanged){
@@ -217,17 +266,29 @@ module.exports = async function makeIPFSFetch (opts = {}) {
             if (ranges && ranges.length && ranges.type === 'bytes') {
               const [{ start, end }] = ranges
               const length = (end - start + 1)
-              return {statusCode: 206, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${length}`, 'Content-Range': `bytes ${start}-${end}/${mainData.size}`}, data: app.files.read(main, { offset: start, length, timeout: useTimeOut })}
+              mainObj.statusCode = 206
+              mainObj.headers = {'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${length}`, 'Content-Range': `bytes ${start}-${end}/${mainData.size}`}
+              mainObj.data = app.files.read(main, { offset: start, length, timeout: useTimeOut })
             } else {
-              return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${mainData.size}`}, data: app.files.read(main, { timeout: useTimeOut })}
+              mainObj.statusCode = 200
+              mainObj.headers = {'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${mainData.size}`}
+              mainObj.data = app.files.read(main, { timeout: useTimeOut })
             }
           } else {
-            return {statusCode: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${mainData.size}`}, data: app.files.read(main, { timeout: useTimeOut })}
+            mainObj.statusCode = 200
+            mainObj.headers = {'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${mainData.size}`}
+            mainObj.data = app.files.read(main, { timeout: useTimeOut })
           }
         } else {
           throw new Error('not a directory or file')
         }
+
+        if(signal){
+          signal.removeEventListener('abort', takeCareOfIt)
+        }
+        return mainObj
       } else if(method === 'POST'){
+        // const mainObj = {}
         let mainData = null
         try {
           const hasOpt = reqHeaders['x-opt'] || searchParams.has('x-opt')
@@ -239,7 +300,14 @@ module.exports = async function makeIPFSFetch (opts = {}) {
             mainData = await iterFile(main, ext, {timeout: useTimeOut})
           }
         } catch (error) {
+          if(signal){
+            signal.removeEventListener('abort', takeCareOfIt)
+          }
           return {statusCode: 400, headers: {'Content-Type': mainRes, 'X-Issue': error.name}, data: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${error.message}</div></body></html>`] : [JSON.stringify(error.message)]}
+        }
+
+        if(signal){
+          signal.removeEventListener('abort', takeCareOfIt)
         }
         return {statusCode: 200, headers: {'Content-Type': mainRes}, data: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${JSON.stringify(mainData)}</div></body></html>`] : [JSON.stringify(mainData)]}
       } else if(method === 'DELETE'){
@@ -250,6 +318,9 @@ module.exports = async function makeIPFSFetch (opts = {}) {
           mainData.id = mainData.cid
           mainData.link = 'ipfs://' + mainData.cid + ext
         } catch (error) {
+          if(signal){
+            signal.removeEventListener('abort', takeCareOfIt)
+          }
           return {statusCode: 400, headers: {'Content-Type': mainRes, 'X-Issue': error.name}, data: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${error.message}</div></body></html>`] : [JSON.stringify(error.message)]}
         }
         if(mainData.type === 'directory'){
@@ -259,11 +330,21 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         } else {
           throw new Error('not a directory or file')
         }
+
+        if(signal){
+          signal.removeEventListener('abort', takeCareOfIt)
+        }
         return {statusCode: 200, headers: {'Content-Type': mainRes}, data: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${JSON.stringify(mainData)}</div></body></html>`] : [JSON.stringify(mainData)]}
       } else {
+        if(signal){
+          signal.removeEventListener('abort', takeCareOfIt)
+        }
         return {statusCode: 400, headers: {'Content-Type': mainRes}, data: mainReq ? [`<html><head><title>Fetch</title></head><body><div>wrong method</div></body></html>`] : [JSON.stringify('wrong method')]}
       }
     } catch (error) {
+      if(signal){
+        signal.removeEventListener('abort', takeCareOfIt)
+      }
       const mainReq = !reqHeaders.accept || !reqHeaders.accept.includes('application/json')
       const mainRes = mainReq ? 'text/html; charset=utf-8' : 'application/json; charset=utf-8'
       return {statusCode: 500, headers: {'Content-Type': mainRes}, data: mainReq ? [`<html><head><title>${error.name}</title></head><body><div><p>${error.stack}</p></div></body></html>`] : [JSON.stringify(error.stack)]}
