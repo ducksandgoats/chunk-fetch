@@ -1,5 +1,5 @@
 module.exports = async function makeIPFSFetch (opts = {}) {
-  const makeFetch = (await import('make-fetch')).makeFetch
+  const makeFetch = require('make-fetch')
   const parseRange = require('range-parser')
   const mime = require('mime/lite')
   const { CID } = require('multiformats/cid')
