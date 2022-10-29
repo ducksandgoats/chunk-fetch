@@ -1,6 +1,6 @@
 {
   "name": "chunk-fetch",
-  "version": "20.0.9",
+  "version": "21.0.0",
   "description": "Use the same `fetch()` API browsers provide for HTTP, but for IPFS",
   "main": "index.js",
   "scripts": {
