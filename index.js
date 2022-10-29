@@ -12,7 +12,6 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   const app = await (async (finalOpts) => {if(finalOpts.ipfs){return finalOpts.ipfs}else{const IPFS = await import('ipfs-core');return await IPFS.create(finalOpts)}})(finalOpts)
   const ipfsTimeout = 30000
   const SUPPORTED_METHODS = ['GET', 'HEAD', 'POST', 'DELETE']
-  const encodeType = 'hex'
   const hostType = '_'
 
   function takeCareOfIt(data){
@@ -183,17 +182,16 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     
     try {
       const { hostname, pathname, protocol, search, searchParams } = new URL(url)
-      const mainHostname = hostname && hostname.startsWith(encodeType) ? Buffer.from(hostname.slice(encodeType.length), 'hex').toString('utf-8') : hostname
 
       if (protocol !== 'ipfs:') {
         return sendTheData(signal, {statusCode: 409, headers: {}, data: ['wrong protocol']})
       } else if (!method || !SUPPORTED_METHODS.includes(method)) {
         return sendTheData(signal, {statusCode: 409, headers: {}, data: ['something wrong with method']})
-      } else if ((!mainHostname) || ((mainHostname.length === 1) && (pathname.split('/').filter(Boolean).length > 1 || mainHostname !== hostType))) {
+      } else if ((!hostname) || (hostname.length === 1 && hostname !== hostType)) {
         return sendTheData(signal, {statusCode: 409, headers: {}, data: ['something wrong with hostname']})
       }
 
-      const {query: main, mimeType: type, ext} = formatReq(decodeURIComponent(mainHostname), decodeURIComponent(pathname))
+      const {query: main, mimeType: type, ext} = formatReq(decodeURIComponent(hostname), decodeURIComponent(pathname))
       const useTimeOut = (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout
 
       const mainReq = !reqHeaders.accept || !reqHeaders.accept.includes('application/json')
