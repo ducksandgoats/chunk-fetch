@@ -10,7 +10,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   const finalOpts = { ...DEFAULT_OPTS, ...opts }
   const app = await (async (finalOpts) => {if(finalOpts.ipfs){return finalOpts.ipfs}else{const IPFS = await import('ipfs-core');return await IPFS.create(finalOpts)}})(finalOpts)
   const check = await import('is-ipfs')
-  const {CID} = await import('multiformats/cid')
+  const {CID} = (await import('multiformats')).CID
   const ipfsTimeout = 30000
   const SUPPORTED_METHODS = ['GET', 'HEAD', 'POST', 'DELETE']
   const hostType = '_'
