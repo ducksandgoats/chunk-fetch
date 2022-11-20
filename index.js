@@ -2,7 +2,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   const makeFetch = require('make-fetch')
   const parseRange = require('range-parser')
   const mime = require('mime/lite')
-  const { CID } = require('multiformats/cid')
+  // const { CID } = require('multiformats/cid')
   const Busboy = require('busboy')
   const { Readable } = require('stream')
   const path = require('path')
@@ -11,7 +11,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   const finalOpts = { ...DEFAULT_OPTS, ...opts }
   const app = await (async (finalOpts) => {if(finalOpts.ipfs){return finalOpts.ipfs}else{const IPFS = await import('ipfs-core');return await IPFS.create(finalOpts)}})(finalOpts)
   const check = await import('is-ipfs')
-  // const {CID} = (await import('multiformats/cid'))
+  const {CID} = (await import('multiformats/cid'))
   const ipfsTimeout = 30000
   const SUPPORTED_METHODS = ['GET', 'HEAD', 'POST', 'DELETE']
   const hostType = '_'
