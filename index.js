@@ -10,6 +10,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   const finalOpts = { ...DEFAULT_OPTS, ...opts }
   const app = await (async (finalOpts) => {if(finalOpts.ipfs){return finalOpts.ipfs}else{const IPFS = await import('ipfs-core');return await IPFS.create(finalOpts)}})(finalOpts)
   const check = await import('is-ipfs')
+  const {CID} = await import('multiformats/cid')
   const ipfsTimeout = 30000
   const SUPPORTED_METHODS = ['GET', 'HEAD', 'POST', 'DELETE']
   const hostType = '_'
@@ -35,13 +36,13 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       const testSlash =  testQuery.indexOf('/')
       const testFinal = testSlash !== -1 ? testQuery.slice(0, testSlash) : testQuery
       if(check.cid(testFinal)){
-        query = testQuery
+        query = CID.parse(testQuery)
       } else {
         query = pathname
       }
     } else {
       if(check.cid(hostname)){
-        query = hostname
+        query = CID.parse(hostname)
       } else {
         query = `/${path.join(hostname, pathname).replace(/\\/g, "/")}`
       }
