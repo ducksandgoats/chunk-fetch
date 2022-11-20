@@ -28,9 +28,9 @@
     "busboy": "^1.6.0",
     "file-type": "^17.1.1",
     "ipfs-core": "^0.16.1",
+    "is-ipfs": "^7.0.3",
     "make-fetch": "^2.3.4",
     "mime": "^2.4.6",
-    "multiformats": "^9.4.2",
     "range-parser": "^1.2.1"
   },
   "devDependencies": {

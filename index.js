@@ -2,7 +2,6 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   const makeFetch = require('make-fetch')
   const parseRange = require('range-parser')
   const mime = require('mime/lite')
-  const { CID } = require('multiformats/cid')
   const Busboy = require('busboy')
   const { Readable } = require('stream')
   const path = require('path')
@@ -10,6 +9,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   const DEFAULT_OPTS = {}
   const finalOpts = { ...DEFAULT_OPTS, ...opts }
   const app = await (async (finalOpts) => {if(finalOpts.ipfs){return finalOpts.ipfs}else{const IPFS = await import('ipfs-core');return await IPFS.create(finalOpts)}})(finalOpts)
+  const check = await import('is-ipfs')
   const ipfsTimeout = 30000
   const SUPPORTED_METHODS = ['GET', 'HEAD', 'POST', 'DELETE']
   const hostType = '_'
@@ -31,12 +31,18 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     pathname = decodeURIComponent(pathname)
     let query = null
     if(hostname === hostType){
-      query = pathname
+      const testQuery = pathname.slice(1)
+      const testSlash =  testQuery.indexOf('/')
+      const testFinal = testSlash !== -1 ? testQuery.slice(0, testSlash) : testQuery
+      if(check.cid(testFinal)){
+        query = testQuery
+      } else {
+        query = pathname
+      }
     } else {
-      try {
-        query = CID.parse(hostname)
-      } catch (err) {
-        console.error(err.name)
+      if(check.cid(hostname)){
+        query = hostname
+      } else {
         query = `/${path.join(hostname, pathname).replace(/\\/g, "/")}`
       }
     }
