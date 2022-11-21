@@ -33,14 +33,15 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     pathname = decodeURIComponent(pathname)
     let query = null
     if(hostname === hostType){
-      const testQuery = pathname.slice(1)
-      const testSlash =  testQuery.indexOf('/')
-      const testFinal = testSlash !== -1 ? testQuery.slice(0, testSlash) : testQuery
-      if(check.cid(testFinal)){
-        query = CID.parse(testQuery)
-      } else {
-        query = pathname
-      }
+      // const testQuery = pathname.slice(1)
+      // const testSlash =  testQuery.indexOf('/')
+      // const testFinal = testSlash !== -1 ? testQuery.slice(0, testSlash) : testQuery
+      // if(check.cid(testFinal)){
+      //   query = CID.parse(testQuery)
+      // } else {
+      //   query = pathname
+      // }
+      query = pathname
     } else {
       if(check.cid(hostname)){
         query = CID.parse(hostname)
