@@ -73,7 +73,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     for await (const item of iterable) {
       item.cid = item.cid.toV1().toString()
       item.path = path.join(main, item.name).replace(/\\/g, "/")
-      item.link = path.join('ipfs://', item.cid, item.name).replace(/\\/g, "/")
+      item.link = item.type === 'file' ? path.join('ipfs://', item.cid, item.name).replace(/\\/g, "/") : path.join('ipfs://', item.cid).replace(/\\/g, "/")
       result.push(item)
     }
     return result
