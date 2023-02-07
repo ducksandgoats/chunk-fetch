@@ -68,16 +68,12 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   //   }
   // }
 
-  async function dirIter (iterable) {
+  async function dirIter (iterable, main) {
     const result = []
     for await (const item of iterable) {
-      // const kind = item.type === 'file' ? item.name : ''
-      if(item.type === 'file'){
-        item.kind = '/' + item.name
-      }
       item.cid = item.cid.toV1().toString()
-      item.host = 'ipfs://' + item.cid
-      item.link = item.host + item.kind
+      item.path = path.join(main, item.name).replace(/\\/g, "/")
+      item.link = path.join('ipfs://', item.cid, item.name).replace(/\\/g, "/")
       result.push(item)
     }
     return result
@@ -227,9 +223,8 @@ module.exports = async function makeIPFSFetch (opts = {}) {
           return sendTheData(signal, {status: 400, headers: {'Content-Type': mainRes, 'X-Issue': error.name}, body: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${error.stack}</div></body></html>`] : [JSON.stringify(error.stack)]})
         }
         if(mainData.type === 'directory'){
-          const plain = await dirIter(app.files.ls(main, {timeout: useTimeOut}))
-
-          return sendTheData(signal, {status: 200, headers: {'Content-Type': mainRes, 'Link': `<ipfs://${mainData.cid.toV1().toString()}/>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, body: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${JSON.stringify(plain)}</div></body></html>`] : [JSON.stringify(plain)]})
+          const plain = await dirIter(app.files.ls(main, {timeout: useTimeOut}), main)
+          return sendTheData(signal, {status: 200, headers: {'Content-Type': mainRes, 'Link': `<ipfs://${mainData.cid.toV1().toString()}/>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, body: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${plain.length ? plain.map((data) => {return `<p><a href="${data.path}">${data.path}</a></p><br/><p><a href="${data.link}">${data.link}</a></p>`}) : "<p>there isn't any data</p>"}</div></body></html>`] : [JSON.stringify(plain)]})
         } else if(mainData.type === 'file'){
           const isRanged = reqHeaders.Range || reqHeaders.range
           if(isRanged){
@@ -237,7 +232,6 @@ module.exports = async function makeIPFSFetch (opts = {}) {
             if (ranges && ranges.length && ranges.type === 'bytes') {
               const [{ start, end }] = ranges
               const length = (end - start + 1)
-
               return sendTheData(signal, {status: 206, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${length}`, 'Content-Range': `bytes ${start}-${end}/${mainData.size}`}, body: app.files.read(main, { offset: start, length, timeout: useTimeOut })})
             } else {
               return sendTheData(signal, {status: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${mainData.size}`}, body: app.files.read(main, { timeout: useTimeOut })})
