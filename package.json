@@ -1,6 +1,6 @@
 {
   "name": "chunk-fetch",
-  "version": "22.0.8",
+  "version": "22.0.9",
   "description": "Use the same `fetch()` API browsers provide for HTTP, but for IPFS",
   "main": "index.js",
   "scripts": {
@@ -25,14 +25,14 @@
   },
   "homepage": "https://github.com/ducksandgoats/chunk-fetch#readme",
   "dependencies": {
-    "busboy": "^1.6.0",
     "file-type": "^17.1.1",
     "ipfs-core": "^0.16.1",
     "is-ipfs": "^7.0.3",
     "make-fetch": "github:ducksandgoats/make-fetch",
     "mime": "^2.4.6",
     "multiformats": "^9.4.2",
-    "range-parser": "^1.2.1"
+    "range-parser": "^1.2.1",
+    "streamx": "^2.13.2"
   },
   "devDependencies": {
     "standard": "^14.3.4",

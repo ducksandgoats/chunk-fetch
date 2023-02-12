@@ -4,8 +4,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   const parseRange = require('range-parser')
   const mime = require('mime/lite')
   // const { CID } = require('multiformats/cid')
-  const Busboy = require('busboy')
-  const { Readable } = require('stream')
+  const { Readable } = require('streamx')
   const path = require('path')
 
   const DEFAULT_OPTS = {}
@@ -27,6 +26,16 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       theSignal.removeEventListener('abort', takeCareOfIt)
     }
     return theData
+  }
+
+  function handleFormData(formdata) {
+    const arr = []
+    for (const [name, info] of formdata) {
+      if (name === 'file') {
+        arr.push(info)
+      }
+    }
+    return arr
   }
 
   function formatReq(hostname, pathname){
@@ -79,49 +88,29 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     return result
   }
 
-  async function saveFormData (pathTo, content, useHeaders, useOpts) {
-    const {savePath, saveIter} = await new Promise((resolve, reject) => {
-      const savePath = []
-      const saveIter = []
-      const busboy = Busboy({ headers: useHeaders })
-
-      function handleOff(){
-        busboy.off('error', handleError)
-        busboy.off('finish', handleFinish)
-        busboy.off('file', handleFiles)
-      }
-      function handleFinish(){
-        handleOff()
-        resolve({savePath, saveIter})
-      }
-      function handleError(error){
-        handleOff()
-        reject(error)
-      }
-      function handleFiles(fieldName, fileData, info){
-        const usePath = path.join(pathTo, info.filename).replace(/\\/g, "/")
-        savePath.push(usePath)
-        saveIter.push(app.files.write(usePath, Readable.from(fileData), useOpts))
-      }
-      busboy.on('error', handleError)
-      busboy.on('finish', handleFinish)
-
-      busboy.on('file', handleFiles)
-  
-      // Parse body as a multipart form
-      // TODO: Readable.from doesn't work in browsers
-      Readable.from(content).pipe(busboy)
-    })
-
-    // toUpload is an async iterator of promises
-    // We collect the promises (all files are queued for upload)
-    // Then we wait for all of them to resolve
-    // await Promise.all(await collect(toUpload))
-    // await Promise.all(saveIter)
-    for(const test of saveIter){
-      await test
+  async function saveFormData(pathTo, data, useOpts, sec) {
+    const saved = []
+    const iter = []
+    for (const info of data) {
+        const usePath = path.join(pathTo, info.name).replace(/\\/g, "/")
+        saved.push(usePath)
+        iter.push(
+          Promise.race([
+            app.files.write(usePath, Readable.from(info.stream()), useOpts),
+            new Promise((resolve, reject) => setTimeout(reject, sec))
+          ])
+        )
     }
-    return savePath
+    await Promise.all(iter)
+    return saved
+  }
+
+  async function saveFileData(pathTo, data, useOpts, sec) {
+    await Promise.race([
+      app.files.write(pathTo, Readable.from(data), useOpts),
+      new Promise((resolve, reject) => setTimeout(reject, sec))
+    ])
+    return [pathTo]
   }
 
   async function iterFiles(data, opts){
@@ -188,16 +177,20 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     const { hostname, pathname, protocol, search, searchParams } = new URL(url)
 
       const {query: main, mimeType: type, ext, fullPath} = formatReq(decodeURIComponent(hostname), decodeURIComponent(pathname))
-      const useTimeOut = (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout
+      const useTimeOut = (reqHeaders.has('x-timer') && reqHeaders.get('x-timer') !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders.get('x-timer') || searchParams.get('x-timer')) * 1000 : ipfsTimeout
 
-      if (reqHeaders['x-load']) {
+      if (reqHeaders.has('x-copy')) {
         const idForContent = main.toV1().toString()
-        const pathToFile = JSON.parse(reqHeaders['x-load']) ? path.join(`/${idForContent}`, fullPath).replace(/\\/g, "/") : fullPath
+        const pathToFile = JSON.parse(reqHeaders.get('x-copy')) ? path.join(`/${idForContent}`, fullPath).replace(/\\/g, "/") : fullPath
         await app.files.write(pathToFile, app.files.read(main, { timeout: useTimeOut }), { timeout: useTimeOut, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false })
-        return sendTheData(signal, { status: 200, headers: { 'X-Data': `${idForContent}`, 'Link': `<ipfs://${idForContent}${fullPath}>; rel="canonical"` }, body: [] })
+        return sendTheData(signal, { status: 200, headers: { 'X-Data': `${idForContent}`, 'X-Link': `ipfs://${idForContent}${ext}`, 'Link': `<ipfs://${idForContent}${ext}>; rel="canonical"` }, body: [] })
       } else {
-        const mainData = await app.files.stat(main, { timeout: useTimeOut })
-        return sendTheData(signal, { status: 200, headers: { 'X-Data': `${mainData.cid.toV1().toString()}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`, 'Content-Length': `${mainData.size}` }, body: [] })
+        try {
+          const mainData = await app.files.stat(main, { timeout: useTimeOut })
+          return sendTheData(signal, { status: 200, headers: { 'X-Data': `${mainData.cid.toV1().toString()}`, 'X-Link': `ipfs://${mainData.cid.toV1().toString()}${ext}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}${fullPath}>; rel="canonical"`, 'Content-Length': `${mainData.size}` }, body: [] })
+        } catch (error) {
+          return sendTheData(signal, { status: 400, headers: {'X-Error': error.name} , body: []})
+        }
       }
   }
 
@@ -211,36 +204,31 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       const { hostname, pathname, protocol, search, searchParams } = new URL(url)
 
       const {query: main, mimeType: type, ext, fullPath} = formatReq(decodeURIComponent(hostname), decodeURIComponent(pathname))
-      const useTimeOut = (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout
+      const useTimeOut = (reqHeaders.has('x-timer') && reqHeaders.get('x-timer') !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders.get('x-timer') || searchParams.get('x-timer')) * 1000 : ipfsTimeout
 
-    const mainReq = !reqHeaders.accept || !reqHeaders.accept.includes('application/json')
+    const mainReq = !reqHeaders.has('accept') || !reqHeaders.get('accept').includes('application/json')
     const mainRes = mainReq ? 'text/html; charset=utf-8' : 'application/json; charset=utf-8'
 
-        let mainData = null
-        try {
-          mainData = await app.files.stat(main, {timeout: useTimeOut})
-        } catch (error) {
-          return sendTheData(signal, {status: 400, headers: {'Content-Type': mainRes, 'X-Issue': error.name}, body: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${error.stack}</div></body></html>`] : [JSON.stringify(error.stack)]})
-        }
+        const mainData = await app.files.stat(main, {timeout: useTimeOut})
         if(mainData.type === 'directory'){
           const plain = await dirIter(app.files.ls(main, {timeout: useTimeOut}), main)
-          return sendTheData(signal, {status: 200, headers: {'Content-Type': mainRes, 'Link': `<ipfs://${mainData.cid.toV1().toString()}/>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, body: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${plain.length ? plain.map((data) => {return `<p><a href="${data.path}">${data.path}</a></p><br/><p><a href="${data.link}">${data.link}</a></p>`}) : "<p>there isn't any data</p>"}</div></body></html>`] : [JSON.stringify(plain)]})
+          return sendTheData(signal, {status: 200, headers: {'Content-Type': mainRes, 'X-Link': `ipfs://${mainData.cid.toV1().toString()}/`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}/>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, body: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${plain.length ? plain.map((data) => {return `<p><a href="${data.path}">${data.path}</a></p><br/><p><a href="${data.link}">${data.link}</a></p>`}) : "<p>there isn't any data</p>"}</div></body></html>`] : [JSON.stringify(plain)]})
         } else if(mainData.type === 'file'){
-          const isRanged = reqHeaders.Range || reqHeaders.range
+          const isRanged = reqHeaders.has('Range') || reqHeaders.has('range')
           if(isRanged){
             const ranges = parseRange(mainData.size, isRanged)
             if (ranges && ranges.length && ranges.type === 'bytes') {
               const [{ start, end }] = ranges
               const length = (end - start + 1)
-              return sendTheData(signal, {status: 206, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${length}`, 'Content-Range': `bytes ${start}-${end}/${mainData.size}`}, body: app.files.read(main, { offset: start, length, timeout: useTimeOut })})
+              return sendTheData(signal, {status: 206, headers: {'X-Link': `ipfs://${mainData.cid.toV1().toString()}${ext}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${length}`, 'Content-Range': `bytes ${start}-${end}/${mainData.size}`}, body: app.files.read(main, { offset: start, length, timeout: useTimeOut })})
             } else {
-              return sendTheData(signal, {status: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${mainData.size}`}, body: app.files.read(main, { timeout: useTimeOut })})
+              return sendTheData(signal, {status: 416, headers: {'X-Link': `ipfs://${mainData.cid.toV1().toString()}${ext}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`, 'Content-Type': mainRes, 'Content-Length': `${mainData.size}`}, body: mainReq ? ['<html><head><title>range</title></head><body><div><p>malformed or unsatisfiable range</p></div></body></html>'] : [JSON.stringify('malformed or unsatisfiable range')]})
             }
           } else {
-            return sendTheData(signal, {status: 200, headers: {'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${mainData.size}`}, body: app.files.read(main, { timeout: useTimeOut })})
+            return sendTheData(signal, {status: 200, headers: {'X-Link': `ipfs://${mainData.cid.toV1().toString()}${ext}`, 'Link': `<ipfs://${mainData.cid.toV1().toString()}${ext}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${mainData.size}`}, body: app.files.read(main, { timeout: useTimeOut })})
           }
         } else {
-          throw new Error('not a directory or file')
+          return sendTheData(signal, { status: 400, headers: { 'Content-Type': mainRes }, body: mainReq ? ['<html><head><title>range</title></head><body><div><p>did not find any file</p></div></body></html>'] : [JSON.stringify('did not find any file')] })
         }
   }
 
@@ -254,26 +242,16 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       const { hostname, pathname, protocol, search, searchParams } = new URL(url)
 
       const {query: main, mimeType: type, ext, fullPath} = formatReq(decodeURIComponent(hostname), decodeURIComponent(pathname))
-      const useTimeOut = (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout
+      const useTimeOut = (reqHeaders.has('x-timer') && reqHeaders.get('x-timer') !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders.get('x-timer') || searchParams.get('x-timer')) * 1000 : ipfsTimeout
 
-    const mainReq = !reqHeaders.accept || !reqHeaders.accept.includes('application/json')
-    const mainRes = mainReq ? 'text/html; charset=utf-8' : 'application/json; charset=utf-8'
+      const mainReq = !reqHeaders.has('accept') || !reqHeaders.get('accept').includes('application/json')
+      const mainRes = mainReq ? 'text/html; charset=utf-8' : 'application/json; charset=utf-8'
 
-        let mainData = null
-        try {
-          const hasOpt = reqHeaders['x-opt'] || searchParams.has('x-opt')
-          const useOpt = hasOpt ? JSON.parse(reqHeaders['x-opt'] || decodeURIComponent(searchParams.get('x-opt'))) : {}
-          if(reqHeaders['content-type'] && reqHeaders['content-type'].includes('multipart/form-data')){
-            mainData = await iterFiles(await saveFormData(main, body, reqHeaders, {...useOpt, timeout: useTimeOut, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false}), {timeout: useTimeOut})
-          } else {
-            await app.files.write(main, body, {...useOpt, timeout: useTimeOut, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false})
-            mainData = await iterFile(main, ext, {timeout: useTimeOut})
-          }
-        } catch (error) {
-          return sendTheData(signal, {status: 400, headers: {'Content-Type': mainRes, 'X-Issue': error.name}, body: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${error.message}</div></body></html>`] : [JSON.stringify(error.message)]})
-        }
+      const hasOpt = reqHeaders.has('x-opt') || searchParams.has('x-opt')
+      const useOpt = hasOpt ? JSON.parse(reqHeaders.get('x-opt') || decodeURIComponent(searchParams.get('x-opt'))) : {}
+      const saved = reqHeaders.has('content-type') && reqHeaders.get('content-type').includes('multipart/form-data') ? await saveFormData(main, handleFormData(await request.formData()), {...useOpt, timeout: useTimeOut, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false}, useTimeOut) : await saveFileData(main, body, {...useOpt, timeout: useTimeOut, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false}, useTimeOut)
 
-        return sendTheData(signal, {status: 200, headers: {'Content-Type': mainRes}, body: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${JSON.stringify(mainData)}</div></body></html>`] : [JSON.stringify(mainData)]})
+      return sendTheData(signal, {status: 200, headers: {'Content-Type': mainRes}, body: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${JSON.stringify(saved)}</div></body></html>`] : [JSON.stringify(saved)]})
   }
 
   async function handleDelete(request) {
@@ -286,20 +264,15 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       const { hostname, pathname, protocol, search, searchParams } = new URL(url)
 
       const {query: main, mimeType: type, ext, fullPath} = formatReq(decodeURIComponent(hostname), decodeURIComponent(pathname))
-      const useTimeOut = (reqHeaders['x-timer'] && reqHeaders['x-timer'] !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders['x-timer'] || searchParams.get('x-timer')) * 1000 : ipfsTimeout
+      const useTimeOut = (reqHeaders.has('x-timer') && reqHeaders.get('x-timer') !== '0') || (searchParams.has('x-timer') && searchParams.get('x-timer') !== '0') ? Number(reqHeaders.get('x-timer') || searchParams.get('x-timer')) * 1000 : ipfsTimeout
 
-    const mainReq = !reqHeaders.accept || !reqHeaders.accept.includes('application/json')
+    const mainReq = !reqHeaders.has('accept') || !reqHeaders.get('accept').includes('application/json')
     const mainRes = mainReq ? 'text/html; charset=utf-8' : 'application/json; charset=utf-8'
 
-    let mainData = null
-    try {
-      mainData = await app.files.stat(main, {timeout: useTimeOut})
+      const mainData = await app.files.stat(main, {timeout: useTimeOut})
       mainData.cid = mainData.cid.toV1().toString()
       mainData.id = mainData.cid
       mainData.link = 'ipfs://' + mainData.cid + ext
-    } catch (error) {
-      return sendTheData(signal, {status: 400, headers: {'Content-Type': mainRes, 'X-Issue': error.name}, body: mainReq ? [`<html><head><title>Fetch</title></head><body><div>${error.message}</div></body></html>`] : [JSON.stringify(error.message)]})
-    }
     if(mainData.type === 'directory'){
       await app.files.rm(main, {cidVersion: 1, recursive: true, timeout: useTimeOut})
     } else if(mainData.type === 'file'){
