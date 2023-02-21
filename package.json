@@ -1,6 +1,6 @@
 {
   "name": "chunk-fetch",
-  "version": "23.0.0",
+  "version": "23.0.1",
   "description": "Use the same `fetch()` API browsers provide for HTTP, but for IPFS",
   "main": "index.js",
   "scripts": {
@@ -32,7 +32,8 @@
     "mime": "^2.4.6",
     "multiformats": "^9.4.2",
     "range-parser": "^1.2.1",
-    "streamx": "^2.13.2"
+    "streamx": "^2.13.2",
+    "uid": "^2.0.1"
   },
   "devDependencies": {
     "standard": "^14.3.4",
