@@ -12,7 +12,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   const finalOpts = { ...DEFAULT_OPTS, ...opts }
   const hostType = '_'
   const app = await (async () => { if (finalOpts.ipfs) { return finalOpts.ipfs } else { const IPFS = await import('ipfs-core'); return await IPFS.create(finalOpts) } })()
-  await (async () => { try { await app.stat(`/${hostType}`, {}); } catch (error) { console.error(error); await app.mkdir(`/${hostType}`, {}); await app.write(`/${hostType}/welcome.txt`, 'this is your user directory'); }})()
+  await (async () => { try { await app.files.stat(`/${hostType}`, {}); } catch (error) { console.error(error); await app.files.mkdir(`/${hostType}`, {}); await app.files.write(`/${hostType}/welcome.txt`, 'this is your user directory'); }})()
   const check = await import('is-ipfs')
   const {CID} = await import('multiformats/cid')
   const ipfsTimeout = 30000
