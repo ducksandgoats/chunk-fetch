@@ -133,8 +133,8 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   async function saveFormData(saveHost, savePath, data, useOpts) {
     const saved = []
     for (const info of data) {
-      const usePath = path.join(savePath, info.name).replace(/\\/g, "/")
-      await app.files.write(path.join(saveHost, usePath).replace(/\\/g, "/"), Readable.from(info.stream()), useOpts)
+      const usePath = path.join(saveHost, savePath, info.name).replace(/\\/g, "/")
+      await app.files.write(usePath, Readable.from(info.stream()), useOpts)
       saved.push(usePath)
     }
     return saved
