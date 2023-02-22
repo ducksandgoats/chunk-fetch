@@ -63,31 +63,32 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   function formatReq(hostname, pathname){
 
     pathname = decodeURIComponent(pathname)
-    let query = null
-    let isCID = false
+    let isCID
     if (check.cid(hostname)) {
-      query = CID.parse(hostname)
       isCID = true
     } else {
-      query = path.join('/', hostname, pathname).replace(/\\/g, "/")
-      query = query.endsWith('/') ? query.slice(0, -1) : query
+      isCID = false
     }
-    const slashHost = path.join('/', hostname).replace(/\\/g, '/')
-    const slashPath = pathname.endsWith('/') ? pathname.slice(0, -1) : pathname
     const lastSlash = pathname.slice(pathname.lastIndexOf('/'))
-    return {main: query, mimeType: mime.getType(lastSlash), slashHost, slashPath, fullHost: hostname , ext: lastSlash, fullPath: pathname, isCID}
+    const slashHost = path.join('/', hostname).replace(/\\/g, '/')
+    const slashPath = pathname !== '/' && pathname.endsWith('/') ? pathname.slice(0, pathname.lastIndexOf('/')) : pathname
+    return {mimeType: mime.getType(lastSlash), slashHost, slashPath, fullHost: hostname , ext: lastSlash, fullPath: pathname, isCID}
+  }
+
+  function makeQuery(cid, hostname, slashhost, slashpath) {
+    if (cid) {
+      return CID.parse(hostname)
+    } else {
+      return path.join(slashhost, slashpath).replace(/\\/g, '/')
+    }
   }
 
   function genDir(id, data) {
     if (id) {
       const test = path.join(`/${uid(20)}`, data).replace(/\\/g, "/")
-      return test.endsWith('/') ? test.slice(0, -1) : test
+      return test.endsWith('/') ? test.slice(0, test.lastIndexOf('/')) : test
     } else {
-      if (data === '/') {
-        return data
-      } else {
-        return data.endsWith('/') ? data.slice(0, -1) : data
-      }
+      return data
     }
   }
 
@@ -129,18 +130,20 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     return result
   }
 
-  async function saveFormData(saveMain, savePath, data, useOpts) {
+  async function saveFormData(saveHost, savePath, data, useOpts) {
     const saved = []
     for (const info of data) {
-      await app.files.write(path.join(saveMain, info.name).replace(/\\/g, "/"), Readable.from(info.stream()), useOpts)
-      saved.push(path.join(savePath, info.name).replace(/\\/g, "/"))
+      const usePath = path.join(savePath, info.name).replace(/\\/g, "/")
+      await app.files.write(path.join(saveHost, usePath).replace(/\\/g, "/"), Readable.from(info.stream()), useOpts)
+      saved.push(usePath)
     }
     return saved
   }
 
-  async function saveFileData(pathTo, savePath, data, useOpts) {
-    await app.files.write(pathTo, Readable.from(data), useOpts)
-    return [savePath]
+  async function saveFileData(saveHost, savePath, data, useOpts) {
+    const usePath = path.join(saveHost, savePath).replace(/\\/g, "/")
+    await app.files.write(usePath, Readable.from(data), useOpts)
+    return [usePath]
   }
 
   async function handleHead(request) {
@@ -151,17 +154,17 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     }
     const { hostname, pathname, protocol, search, searchParams } = new URL(url)
 
-    const { main, mimeType: type, ext, fullHost, fullPath, isCID, isHost } = formatReq(decodeURIComponent(hostname), decodeURIComponent(pathname))
+    const { mimeType: type, ext, fullHost, fullPath, isCID, slashHost, slashPath } = formatReq(decodeURIComponent(hostname), decodeURIComponent(pathname))
     const useOpts = { timeout: reqHeaders.has('x-timer') || searchParams.has('x-timer') ? reqHeaders.get('x-timer') !== '0' || searchParams.get('x-timer') !== '0' ? Number(reqHeaders.get('x-timer') || searchParams.get('x-timer')) * 1000 : undefined : ipfsTimeout }
 
     if (reqHeaders.has('x-copy') || searchParams.has('x-copy')) {
-      const pathToData = genDir(JSON.parse(reqHeaders.get('x-copy') || searchParams.get('x-copy')), fullPath)
-      await app.files.cp(main, pathToData, { ...useOpts, cidVersion: 1, parents: true })
+      const pathToData = genDir(JSON.parse(reqHeaders.get('x-copy') || searchParams.get('x-copy')), slashPath)
+      await app.files.cp(makeQuery(isCID, fullHost, slashHost, slashPath), pathToData, { ...useOpts, cidVersion: 1, parents: true })
       const useLink = path.join('ipfs://', takeFirstSlash(pathToData)).replace(/\\/g, "/")
       return sendTheData(signal, { status: 200, headers: { 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"` }, body: '' })
     } else {
       try {
-        const mainData = await app.files.stat(main, useOpts)
+        const mainData = await app.files.stat(makeQuery(isCID, fullHost, slashHost, slashPath), useOpts)
         const useLink = mainData.type === 'directory' ? path.join('ipfs://', mainData.cid.toV1().toString(), '/').replace(/\\/g, "/") : path.join('ipfs://', mainData.cid.toV1().toString(), fullPath).replace(/\\/g, "/")
         return sendTheData(signal, { status: 200, headers: { 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`, 'Content-Length': `${mainData.size}` }, body: '' })
       } catch (error) {
@@ -184,14 +187,14 @@ module.exports = async function makeIPFSFetch (opts = {}) {
 
       const { hostname, pathname, protocol, search, searchParams } = new URL(url)
 
-    const { main, mimeType: type, ext, fullHost, fullPath, isCID, isHost } = formatReq(decodeURIComponent(hostname), decodeURIComponent(pathname))
+    const { mimeType: type, ext, fullHost, fullPath, isCID, slashHost, slashPath } = formatReq(decodeURIComponent(hostname), decodeURIComponent(pathname))
     const useOpts = { timeout: reqHeaders.has('x-timer') || searchParams.has('x-timer') ? reqHeaders.get('x-timer') !== '0' || searchParams.get('x-timer') !== '0' ? Number(reqHeaders.get('x-timer') || searchParams.get('x-timer')) * 1000 : undefined : ipfsTimeout }
 
     const mainReq = !reqHeaders.has('accept') || !reqHeaders.get('accept').includes('application/json')
     const mainRes = mainReq ? 'text/html; charset=utf-8' : 'application/json; charset=utf-8'
 
     try {
-    const mainData = await app.files.stat(main, useOpts)
+    const mainData = await app.files.stat(makeQuery(isCID, fullHost, slashHost, slashPath), useOpts)
     if (mainData.type === 'file') {
       const useLink = path.join('ipfs://', mainData.cid.toV1().toString(), fullPath).replace(/\\/g, "/")
       const isRanged = reqHeaders.has('Range') || reqHeaders.has('range')
@@ -200,17 +203,17 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         if (ranges && ranges.length && ranges.type === 'bytes') {
           const [{ start, end }] = ranges
           const length = (end - start + 1)
-          return sendTheData(signal, {status: 206, headers: {'X-Link': `${useLink}`, 'Link': `<${useLink}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${length}`, 'Content-Range': `bytes ${start}-${end}/${mainData.size}`}, body: app.files.read(main, { ...useOpts, offset: start, length })})
+          return sendTheData(signal, {status: 206, headers: {'X-Link': `${useLink}`, 'Link': `<${useLink}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${length}`, 'Content-Range': `bytes ${start}-${end}/${mainData.size}`}, body: app.files.read(makeQuery(isCID, fullHost, slashHost, slashPath), { ...useOpts, offset: start, length })})
         } else {
           return sendTheData(signal, {status: 416, headers: {'X-Link': `${useLink}`, 'Link': `<${useLink}>; rel="canonical"`, 'Content-Type': mainRes, 'Content-Length': `${mainData.size}`}, body: mainReq ? '<html><head><title>range</title></head><body><div><p>malformed or unsatisfiable range</p></div></body></html>' : JSON.stringify('malformed or unsatisfiable range')})
         }
       } else {
-        return sendTheData(signal, {status: 200, headers: {'X-Link': `${useLink}`, 'Link': `<${useLink}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${mainData.size}`}, body: app.files.read(main, { ...useOpts })})
+        return sendTheData(signal, {status: 200, headers: {'X-Link': `${useLink}`, 'Link': `<${useLink}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${mainData.size}`}, body: app.files.read(makeQuery(isCID, fullHost, slashHost, slashPath), { ...useOpts })})
       }
     } else if (mainData.type === 'directory') {
-      const plain = await dirIter(app.files.ls(main, useOpts))
+      const plain = await dirIter(app.files.ls(makeQuery(isCID, fullHost, slashHost, slashPath), useOpts))
       const useLink = path.join('ipfs://', mainData.cid.toV1().toString(), '/').replace(/\\/g, "/")
-      return sendTheData(signal, {status: 200, headers: {'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, body: mainReq ? `<html><head><title>Fetch</title></head><body><div>${JSON.stringify(plain.map((data) => {return `<p><a href="${data.link}">${data.name}</a></p>`}))}</div></body></html>` : JSON.stringify(plain)})
+      return sendTheData(signal, {status: 200, headers: {'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, body: mainReq ? `<html><head><title>${fullHost}</title></head><body><div>${JSON.stringify(plain.map((data) => {return `<p><a href="${data.link}">${data.name}</a></p>`}))}</div></body></html>` : JSON.stringify(plain)})
     } else {
       throw new Error('data is invalid')
     }
@@ -233,16 +236,16 @@ module.exports = async function makeIPFSFetch (opts = {}) {
 
       const { hostname, pathname, protocol, search, searchParams } = new URL(url)
 
-      const {main, mimeType: type, ext, fullHost, fullPath, slashHost, slashPath} = formatReq(decodeURIComponent(hostname), decodeURIComponent(pathname))
+      const {mimeType: type, ext, fullHost, fullPath, slashHost, slashPath, isCID} = formatReq(decodeURIComponent(hostname), decodeURIComponent(pathname))
 
       const mainReq = !reqHeaders.has('accept') || !reqHeaders.get('accept').includes('application/json')
       const mainRes = mainReq ? 'text/html; charset=utf-8' : 'application/json; charset=utf-8'
 
     try {
       const useOpt = reqHeaders.has('x-opt') || searchParams.has('x-opt') ? JSON.parse(reqHeaders.get('x-opt') || decodeURIComponent(searchParams.get('x-opt'))) : {}
-    const saved = reqHeaders.has('content-type') && reqHeaders.get('content-type').includes('multipart/form-data') ? await saveFormData(main, slashPath, handleFormData(await request.formData()), { ...useOpt, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false }) : await saveFileData(main, slashPath, body, { ...useOpt, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false })
+    const saved = reqHeaders.has('content-type') && reqHeaders.get('content-type').includes('multipart/form-data') ? await saveFormData(slashHost, slashPath, handleFormData(await request.formData()), { ...useOpt, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false }) : await saveFileData(slashHost, slashPath, body, { ...useOpt, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false })
     const useLink = path.join('ipfs://', fullHost, fullPath).replace(/\\/g, '/')
-      return sendTheData(signal, {status: 200, headers: {'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`}, body: mainReq ? `<html><head><title>Fetch</title></head><body><div>${JSON.stringify(saved)}</div></body></html>` : JSON.stringify(saved)})
+      return sendTheData(signal, {status: 200, headers: {'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`}, body: mainReq ? `<html><head><title>${fullHost}</title></head><body><div>${JSON.stringify(saved)}</div></body></html>` : JSON.stringify(saved)})
     } catch (error) {
       if (error.message === 'not a file') {
         const useLink = path.join('ipfs://', fullHost, fullPath).replace(/\\/g, '/')
@@ -262,15 +265,15 @@ module.exports = async function makeIPFSFetch (opts = {}) {
 
       const { hostname, pathname, protocol, search, searchParams } = new URL(url)
 
-      const {main, mimeType: type, ext, fullHost, fullPath} = formatReq(decodeURIComponent(hostname), decodeURIComponent(pathname))
+      const {mimeType: type, ext, fullHost, fullPath, isCID, slashHost, slashPath} = formatReq(decodeURIComponent(hostname), decodeURIComponent(pathname))
 
     const mainReq = !reqHeaders.has('accept') || !reqHeaders.get('accept').includes('application/json')
     const mainRes = mainReq ? 'text/html; charset=utf-8' : 'application/json; charset=utf-8'
 
     try {
-    await app.files.rm(main, { cidVersion: 1, recursive: true })
+    await app.files.rm(path.join(slashHost, slashPath).replace(/\\/g, '/'), { cidVersion: 1, recursive: true })
     const useLink = path.join('ipfs://', fullHost, fullPath).replace(/\\/g, '/')
-    return sendTheData(signal, { status: 200, headers: { 'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"` }, body: mainReq ? `<html><head><title>Fetch</title></head><body><div>${JSON.stringify(mainData)}</div></body></html>` : JSON.stringify(mainData) })
+    return sendTheData(signal, { status: 200, headers: { 'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"` }, body: mainReq ? `<html><head><title>${fullHost}</title></head><body><div>${JSON.stringify(mainData)}</div></body></html>` : JSON.stringify(mainData) })
     } catch (error) {
       if (error.message === 'file does not exist') {
         const useLink = path.join('ipfs://', fullHost, fullPath).replace(/\\/g, '/')
