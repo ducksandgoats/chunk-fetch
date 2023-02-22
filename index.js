@@ -133,17 +133,16 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   async function saveFormData(saveHost, savePath, data, useOpts) {
     const saved = []
     for (const info of data) {
-      const usePath = path.join(saveHost, savePath, info.name).replace(/\\/g, "/")
-      await app.files.write(usePath, Readable.from(info.stream()), useOpts)
+      const usePath = path.join(savePath, info.name).replace(/\\/g, "/")
+      await app.files.write(path.join(saveHost, usePath).replace(/\\/g, "/"), Readable.from(info.stream()), useOpts)
       saved.push(usePath)
     }
     return saved
   }
 
   async function saveFileData(saveHost, savePath, data, useOpts) {
-    const usePath = path.join(saveHost, savePath).replace(/\\/g, "/")
-    await app.files.write(usePath, Readable.from(data), useOpts)
-    return [usePath]
+    await app.files.write(path.join(saveHost, savePath).replace(/\\/g, "/"), Readable.from(data), useOpts)
+    return [savePath]
   }
 
   async function handleHead(request) {
@@ -243,8 +242,10 @@ module.exports = async function makeIPFSFetch (opts = {}) {
 
     try {
       const useOpt = reqHeaders.has('x-opt') || searchParams.has('x-opt') ? JSON.parse(reqHeaders.get('x-opt') || decodeURIComponent(searchParams.get('x-opt'))) : {}
-    const saved = reqHeaders.has('content-type') && reqHeaders.get('content-type').includes('multipart/form-data') ? await saveFormData(slashHost, slashPath, handleFormData(await request.formData()), { ...useOpt, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false }) : await saveFileData(slashHost, slashPath, body, { ...useOpt, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false })
-    const useLink = path.join('ipfs://', fullHost, fullPath).replace(/\\/g, '/')
+      const saved = reqHeaders.has('content-type') && reqHeaders.get('content-type').includes('multipart/form-data') ? await saveFormData(slashHost, slashPath, handleFormData(await request.formData()), { ...useOpt, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false }) : await saveFileData(slashHost, slashPath, body, { ...useOpt, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false })
+      const useName = `ipfs://${fullHost}`
+      saved.forEach((data, i) => { saved[i] = path.join(useName, data).replace(/\\/g, '/') })
+      const useLink = path.join('ipfs://', fullHost, fullPath).replace(/\\/g, '/')
       return sendTheData(signal, {status: 200, headers: {'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`}, body: mainReq ? `<html><head><title>${fullHost}</title></head><body><div>${JSON.stringify(saved)}</div></body></html>` : JSON.stringify(saved)})
     } catch (error) {
       if (error.message === 'not a file') {
