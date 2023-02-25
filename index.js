@@ -159,16 +159,16 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     if (reqHeaders.has('x-copy') || searchParams.has('x-copy')) {
       const pathToData = genDir(JSON.parse(reqHeaders.get('x-copy') || searchParams.get('x-copy')), slashPath)
       await app.files.cp(makeQuery(isCID, fullHost, slashHost, slashPath), pathToData, { ...useOpts, cidVersion: 1, parents: true })
-      const useLink = path.join('ipfs://', takeFirstSlash(pathToData)).replace(/\\/g, "/")
+      const useLink = 'ipfs://' + takeFirstSlash(pathToData).replace(/\\/g, "/")
       return sendTheData(signal, { status: 200, headers: { 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"` }, body: '' })
     } else {
       try {
         const mainData = await app.files.stat(makeQuery(isCID, fullHost, slashHost, slashPath), useOpts)
-        const useLink = mainData.type === 'directory' ? path.join('ipfs://', mainData.cid.toV1().toString(), '/').replace(/\\/g, "/") : path.join('ipfs://', mainData.cid.toV1().toString(), fullPath).replace(/\\/g, "/")
+        const useLink = mainData.type === 'directory' ? 'ipfs://' + path.join(mainData.cid.toV1().toString(), '/').replace(/\\/g, "/") : 'ipfs://' + path.join(mainData.cid.toV1().toString(), fullPath).replace(/\\/g, "/")
         return sendTheData(signal, { status: 200, headers: { 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`, 'Content-Length': `${mainData.size}` }, body: '' })
       } catch (error) {
         if (error.message === `${main} does not exist`) {
-          const useLink = path.join('ipfs://', fullHost, fullPath).replace(/\\/g, '/')
+          const useLink = 'ipfs://'  + path.join(fullHost, fullPath).replace(/\\/g, '/')
           return sendTheData(signal, { status: 400, headers: { 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`, 'X-Error': error.message }, body: '' })
         } else {
           throw error
@@ -195,7 +195,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     try {
     const mainData = await app.files.stat(makeQuery(isCID, fullHost, slashHost, slashPath), useOpts)
     if (mainData.type === 'file') {
-      const useLink = path.join('ipfs://', mainData.cid.toV1().toString(), fullPath).replace(/\\/g, "/")
+      const useLink = 'ipfs://' + path.join(mainData.cid.toV1().toString(), fullPath).replace(/\\/g, "/")
       const isRanged = reqHeaders.has('Range') || reqHeaders.has('range')
       if (isRanged) {
         const ranges = parseRange(mainData.size, reqHeaders.get('Range') || reqHeaders.get('range'))
@@ -211,14 +211,14 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       }
     } else if (mainData.type === 'directory') {
       const plain = await dirIter(app.files.ls(makeQuery(isCID, fullHost, slashHost, slashPath), useOpts))
-      const useLink = path.join('ipfs://', mainData.cid.toV1().toString(), '/').replace(/\\/g, "/")
+      const useLink = 'ipfs://' + path.join(mainData.cid.toV1().toString(), '/').replace(/\\/g, "/")
       return sendTheData(signal, {status: 200, headers: {'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, body: mainReq ? `<html><head><title>${fullHost}</title></head><body><div>${JSON.stringify(plain.map((data) => {return `<p><a href="${data.link}">${data.name}</a></p>`}))}</div></body></html>` : JSON.stringify(plain)})
     } else {
       throw new Error('data is invalid')
     }
     } catch (error) {
         if (error.message === `${main} does not exist`) {
-          const useLink = path.join('ipfs://', fullHost, fullPath).replace(/\\/g, '/')
+          const useLink = 'ipfs://' + path.join(fullHost, fullPath).replace(/\\/g, '/')
           return sendTheData(signal, { status: 400, headers: { 'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`, 'X-Error': error.message }, body: mainReq ? `<html><head><title>${error.name}</title></head><body><div><p>${error.stack}</p></div></body></html>` : JSON.stringify(error.stack) })
         } else {
           throw error
@@ -243,13 +243,12 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     try {
       const useOpt = reqHeaders.has('x-opt') || searchParams.has('x-opt') ? JSON.parse(reqHeaders.get('x-opt') || decodeURIComponent(searchParams.get('x-opt'))) : {}
       const saved = reqHeaders.has('content-type') && reqHeaders.get('content-type').includes('multipart/form-data') ? await saveFormData(slashHost, slashPath, handleFormData(await request.formData()), { ...useOpt, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false }) : await saveFileData(slashHost, slashPath, body, { ...useOpt, cidVersion: 1, parents: true, truncate: true, create: true, rawLeaves: false })
-      const useName = `ipfs://${fullHost}`
-      saved.forEach((data, i) => { saved[i] = path.join(useName, data).replace(/\\/g, '/') })
-      const useLink = path.join('ipfs://', fullHost, fullPath).replace(/\\/g, '/')
+      saved.forEach((data, i) => { saved[i] = 'ipfs://' + path.join(fullHost, data).replace(/\\/g, '/') })
+      const useLink = 'ipfs://' + path.join(fullHost, fullPath).replace(/\\/g, '/')
       return sendTheData(signal, {status: 200, headers: {'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`}, body: mainReq ? `<html><head><title>${fullHost}</title></head><body><div>${JSON.stringify(saved)}</div></body></html>` : JSON.stringify(saved)})
     } catch (error) {
       if (error.message === 'not a file') {
-        const useLink = path.join('ipfs://', fullHost, fullPath).replace(/\\/g, '/')
+        const useLink = 'ipfs://' + path.join(fullHost, fullPath).replace(/\\/g, '/')
         return sendTheData(signal, { status: 400, headers: { 'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`, 'X-Error': error.message }, body: mainReq ? `<html><head><title>${error.name}</title></head><body><div><p>${error.stack}</p></div></body></html>` : JSON.stringify(error.stack) })
       } else {
         throw error
@@ -273,11 +272,11 @@ module.exports = async function makeIPFSFetch (opts = {}) {
 
     try {
     await app.files.rm(path.join(slashHost, slashPath).replace(/\\/g, '/'), { cidVersion: 1, recursive: true })
-    const useLink = path.join('ipfs://', fullHost, fullPath).replace(/\\/g, '/')
+    const useLink = 'ipfs://' + path.join(fullHost, fullPath).replace(/\\/g, '/')
     return sendTheData(signal, { status: 200, headers: { 'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"` }, body: mainReq ? `<html><head><title>${fullHost}</title></head><body><div>${JSON.stringify(mainData)}</div></body></html>` : JSON.stringify(mainData) })
     } catch (error) {
       if (error.message === 'file does not exist') {
-        const useLink = path.join('ipfs://', fullHost, fullPath).replace(/\\/g, '/')
+        const useLink = 'ipfs://' + path.join(fullHost, fullPath).replace(/\\/g, '/')
         return sendTheData(signal, { status: 400, headers: { 'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`, 'X-Error': error.message }, body: mainReq ? `<html><head><title>${error.name}</title></head><body><div><p>${error.stack}</p></div></body></html>` : JSON.stringify(error.stack) })
       } else {
         throw error
