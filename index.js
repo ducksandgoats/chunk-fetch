@@ -133,7 +133,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
 
   async function saveFormData(saveHost, savePath, data, useOpts) {
     for (const info of data) {
-      await app.files.write(path.join(saveHost, savePath, info.name).replace(/\\/g, "/"), Readable.from(info.stream()), useOpts)
+      await app.files.write(path.join(saveHost, savePath, info.webkitRelativePath || info.name).replace(/\\/g, "/"), Readable.from(info.stream()), useOpts)
     }
     return savePath
   }
