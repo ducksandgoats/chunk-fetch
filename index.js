@@ -124,7 +124,8 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   async function dirIter (iterable) {
     const result = []
     for await (const item of iterable) {
-      item.link = item.type === 'file' ? path.join('ipfs://', item.cid.toV1().toString(), item.name).replace(/\\/g, "/") : path.join('ipfs://', item.cid.toV1().toString(), '/').replace(/\\/g, "/")
+      item.cid = item.cid.toV1().toString()
+      item.link = item.type === 'file' ? 'ipfs://' + path.join(item.cid, item.name).replace(/\\/g, "/") : 'ipfs://' + path.join(item.cid, '/').replace(/\\/g, "/")
       result.push(item)
     }
     return result
@@ -270,7 +271,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     try {
     await app.files.rm(path.join(slashHost, slashPath).replace(/\\/g, '/'), { cidVersion: 1, recursive: true })
     const useLink = 'ipfs://' + path.join(fullHost, fullPath).replace(/\\/g, '/')
-    return sendTheData(signal, { status: 200, headers: { 'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"` }, body: mainReq ? `<html><head><title>${fullHost}</title></head><body><div>${JSON.stringify(mainData)}</div></body></html>` : JSON.stringify(mainData) })
+    return sendTheData(signal, { status: 200, headers: { 'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"` }, body: mainReq ? `<html><head><title>${fullHost}</title></head><body><div>${JSON.stringify(useLink)}</div></body></html>` : JSON.stringify(useLink) })
     } catch (error) {
       if (error.message === 'file does not exist') {
         const useLink = 'ipfs://' + path.join(fullHost, fullPath).replace(/\\/g, '/')
