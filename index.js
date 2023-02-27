@@ -153,15 +153,16 @@ module.exports = async function makeIPFSFetch (opts = {}) {
 
     const { mimeType: type, ext, fullHost, fullPath, isCID, slashHost, slashPath } = formatReq(decodeURIComponent(hostname), decodeURIComponent(pathname))
     const useOpts = { timeout: reqHeaders.has('x-timer') || searchParams.has('x-timer') ? reqHeaders.get('x-timer') !== '0' || searchParams.get('x-timer') !== '0' ? Number(reqHeaders.get('x-timer') || searchParams.get('x-timer')) * 1000 : undefined : ipfsTimeout }
+    const getQuery = makeQuery(isCID, fullHost, slashHost, slashPath)
 
     if (reqHeaders.has('x-copy') || searchParams.has('x-copy')) {
       const pathToData = genDir(JSON.parse(reqHeaders.get('x-copy') || searchParams.get('x-copy')), slashPath)
-      await app.files.cp(makeQuery(isCID, fullHost, slashHost, slashPath), pathToData, { ...useOpts, cidVersion: 1, parents: true })
+      await app.files.cp(getQuery, pathToData, { ...useOpts, cidVersion: 1, parents: true })
       const useLink = 'ipfs://' + takeFirstSlash(pathToData).replace(/\\/g, "/")
       return sendTheData(signal, { status: 200, headers: { 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"` }, body: '' })
     } else {
       try {
-        const mainData = await app.files.stat(makeQuery(isCID, fullHost, slashHost, slashPath), useOpts)
+        const mainData = await app.files.stat(getQuery, useOpts)
         const useLink = mainData.type === 'directory' ? 'ipfs://' + path.join(mainData.cid.toV1().toString(), '/').replace(/\\/g, "/") : 'ipfs://' + path.join(mainData.cid.toV1().toString(), fullPath).replace(/\\/g, "/")
         return sendTheData(signal, { status: 200, headers: { 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`, 'Content-Length': `${mainData.size}` }, body: '' })
       } catch (error) {
