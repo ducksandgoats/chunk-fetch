@@ -210,7 +210,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     } else if (mainData.type === 'directory') {
       const plain = await dirIter(app.files.ls(makeQuery(isCID, fullHost, slashHost, slashPath), useOpts))
       const useLink = 'ipfs://' + path.join(mainData.cid.toV1().toString(), '/').replace(/\\/g, "/")
-      return sendTheData(signal, {status: 200, headers: {'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, body: mainReq ? `<html><head><title>${fullHost}</title></head><body><div>${JSON.stringify(plain.map((data) => {return `<p><a href="${data.link}">${data.name}</a></p>`}))}</div></body></html>` : JSON.stringify(plain)})
+      return sendTheData(signal, {status: 200, headers: {'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, body: mainReq ? `<html><head><title>${fullHost}</title></head><body><div>${plain.map((data) => {return `<p><a href="${data.link}">${data.name}</a></p>`})}</div></body></html>` : JSON.stringify(plain)})
     } else {
       throw new Error('data is invalid')
     }
