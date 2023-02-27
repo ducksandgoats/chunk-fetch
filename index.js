@@ -165,7 +165,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         const useLink = mainData.type === 'directory' ? 'ipfs://' + path.join(mainData.cid.toV1().toString(), '/').replace(/\\/g, "/") : 'ipfs://' + path.join(mainData.cid.toV1().toString(), fullPath).replace(/\\/g, "/")
         return sendTheData(signal, { status: 200, headers: { 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`, 'Content-Length': `${mainData.size}` }, body: '' })
       } catch (error) {
-        if (error.message === `${main} does not exist`) {
+        if (error.message.includes('does not exist')) {
           const useLink = 'ipfs://'  + path.join(fullHost, fullPath).replace(/\\/g, '/')
           return sendTheData(signal, { status: 400, headers: { 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`, 'X-Error': error.message }, body: '' })
         } else {
@@ -189,9 +189,10 @@ module.exports = async function makeIPFSFetch (opts = {}) {
 
     const mainReq = !reqHeaders.has('accept') || !reqHeaders.get('accept').includes('application/json')
     const mainRes = mainReq ? 'text/html; charset=utf-8' : 'application/json; charset=utf-8'
+    const getQuery = makeQuery(isCID, fullHost, slashHost, slashPath)
 
     try {
-    const mainData = await app.files.stat(makeQuery(isCID, fullHost, slashHost, slashPath), useOpts)
+    const mainData = await app.files.stat(getQuery, useOpts)
     if (mainData.type === 'file') {
       const useLink = 'ipfs://' + path.join(mainData.cid.toV1().toString(), fullPath).replace(/\\/g, "/")
       const isRanged = reqHeaders.has('Range') || reqHeaders.has('range')
@@ -200,22 +201,22 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         if (ranges && ranges.length && ranges.type === 'bytes') {
           const [{ start, end }] = ranges
           const length = (end - start + 1)
-          return sendTheData(signal, {status: 206, headers: {'X-Link': `${useLink}`, 'Link': `<${useLink}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${length}`, 'Content-Range': `bytes ${start}-${end}/${mainData.size}`}, body: app.files.read(makeQuery(isCID, fullHost, slashHost, slashPath), { ...useOpts, offset: start, length })})
+          return sendTheData(signal, {status: 206, headers: {'X-Link': `${useLink}`, 'Link': `<${useLink}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${length}`, 'Content-Range': `bytes ${start}-${end}/${mainData.size}`}, body: app.files.read(getQuery, { ...useOpts, offset: start, length })})
         } else {
           return sendTheData(signal, {status: 416, headers: {'X-Link': `${useLink}`, 'Link': `<${useLink}>; rel="canonical"`, 'Content-Type': mainRes, 'Content-Length': `${mainData.size}`}, body: mainReq ? '<html><head><title>range</title></head><body><div><p>malformed or unsatisfiable range</p></div></body></html>' : JSON.stringify('malformed or unsatisfiable range')})
         }
       } else {
-        return sendTheData(signal, {status: 200, headers: {'X-Link': `${useLink}`, 'Link': `<${useLink}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${mainData.size}`}, body: app.files.read(makeQuery(isCID, fullHost, slashHost, slashPath), { ...useOpts })})
+        return sendTheData(signal, {status: 200, headers: {'X-Link': `${useLink}`, 'Link': `<${useLink}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${mainData.size}`}, body: app.files.read(getQuery, { ...useOpts })})
       }
     } else if (mainData.type === 'directory') {
-      const plain = await dirIter(app.files.ls(makeQuery(isCID, fullHost, slashHost, slashPath), useOpts))
+      const plain = await dirIter(app.files.ls(getQuery, useOpts))
       const useLink = 'ipfs://' + path.join(mainData.cid.toV1().toString(), '/').replace(/\\/g, "/")
       return sendTheData(signal, {status: 200, headers: {'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, body: mainReq ? `<html><head><title>${fullHost}</title></head><body><div>${plain.map((data) => {return `<p><a href="${data.link}">${data.name}</a></p>`})}</div></body></html>` : JSON.stringify(plain)})
     } else {
       throw new Error('data is invalid')
     }
     } catch (error) {
-        if (error.message === `${main} does not exist`) {
+        if (error.message.includes('does not exist')) {
           const useLink = 'ipfs://' + path.join(fullHost, fullPath).replace(/\\/g, '/')
           return sendTheData(signal, { status: 400, headers: { 'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`, 'X-Error': error.message }, body: mainReq ? `<html><head><title>${error.name}</title></head><body><div><p>${error.stack}</p></div></body></html>` : JSON.stringify(error.stack) })
         } else {
@@ -245,7 +246,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       const useLink = 'ipfs://' + path.join(fullHost, fullPath).replace(/\\/g, '/')
       return sendTheData(signal, {status: 200, headers: {'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`}, body: mainReq ? `<html><head><title>${fullHost}</title></head><body><div>${JSON.stringify(saved)}</div></body></html>` : JSON.stringify(saved)})
     } catch (error) {
-      if (error.message === 'not a file') {
+      if (error.message.includes('not a file')) {
         const useLink = 'ipfs://' + path.join(fullHost, fullPath).replace(/\\/g, '/')
         return sendTheData(signal, { status: 400, headers: { 'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`, 'X-Error': error.message }, body: mainReq ? `<html><head><title>${error.name}</title></head><body><div><p>${error.stack}</p></div></body></html>` : JSON.stringify(error.stack) })
       } else {
@@ -273,7 +274,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     const useLink = 'ipfs://' + path.join(fullHost, fullPath).replace(/\\/g, '/')
     return sendTheData(signal, { status: 200, headers: { 'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"` }, body: mainReq ? `<html><head><title>${fullHost}</title></head><body><div>${JSON.stringify(useLink)}</div></body></html>` : JSON.stringify(useLink) })
     } catch (error) {
-      if (error.message === 'file does not exist') {
+      if (error.message.includes('file does not exist')) {
         const useLink = 'ipfs://' + path.join(fullHost, fullPath).replace(/\\/g, '/')
         return sendTheData(signal, { status: 400, headers: { 'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`, 'X-Error': error.message }, body: mainReq ? `<html><head><title>${error.name}</title></head><body><div><p>${error.stack}</p></div></body></html>` : JSON.stringify(error.stack) })
       } else {
