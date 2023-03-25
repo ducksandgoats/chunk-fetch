@@ -6,7 +6,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   // const { CID } = require('multiformats/cid')
   const { Readable } = require('streamx')
   const path = require('path')
-  const {uid} = require('uid')
+  const crypto = require('crypto')
 
   const DEFAULT_OPTS = {}
   const finalOpts = { ...DEFAULT_OPTS, ...opts }
@@ -75,20 +75,21 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     return {mimeType: mime.getType(lastSlash), slashHost, slashPath, fullHost: hostname , ext: lastSlash, fullPath: pathname, isCID}
   }
 
-  function makeQuery(cid, hostname, slashhost, slashpath) {
-    if (cid) {
-      return CID.parse(hostname)
-    } else {
-      return path.join(slashhost, slashpath).replace(/\\/g, '/')
-    }
-  }
+  // function makeQuery(cid, hostname, slashhost, slashpath) {
+  //   if (cid) {
+  //     return CID.parse(hostname)
+  //   } else {
+  //     return path.join(slashhost, slashpath).replace(/\\/g, '/')
+  //   }
+  // }
 
-  function genDir(id, data) {
+  function genDir(id, hash, data) {
     if (id) {
-      const test = path.join(`/${uid(20)}`, data).replace(/\\/g, "/")
+      const test = path.join(`/${crypto.createHash('md5').update(hash).digest("hex")}`, data).replace(/\\/g, "/")
       return test.endsWith('/') ? test.slice(0, test.lastIndexOf('/')) : test
     } else {
-      return data
+      const test = path.join('/_', data).replace(/\\/g, "/")
+      return test.endsWith('/') ? test.slice(0, test.lastIndexOf('/')) : test
     }
   }
 
@@ -96,9 +97,9 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   //   return data.endsWith('/') ? data.slice(0, -1) : data
   // }
 
-  function takeFirstSlash(data) {
-    return data.startsWith('/') ? data.replace('/') : data
-  }
+  // function takeFirstSlash(data) {
+  //   return data.startsWith('/') ? data.replace('/') : data
+  // }
 
   // function makeLink(data, extra, isCID, isHost) {
 
@@ -153,16 +154,19 @@ module.exports = async function makeIPFSFetch (opts = {}) {
 
     const { mimeType: type, ext, fullHost, fullPath, isCID, slashHost, slashPath } = formatReq(decodeURIComponent(hostname), decodeURIComponent(pathname))
     const useOpts = { timeout: reqHeaders.has('x-timer') || searchParams.has('x-timer') ? reqHeaders.get('x-timer') !== '0' || searchParams.get('x-timer') !== '0' ? Number(reqHeaders.get('x-timer') || searchParams.get('x-timer')) * 1000 : undefined : ipfsTimeout }
-    const getQuery = makeQuery(isCID, fullHost, slashHost, slashPath)
+    // const getQuery = makeQuery(isCID, fullHost, slashHost, slashPath)
+    const useCID = isCID ? CID.parse(fullHost) : null
+    const getQuery = useCID ? null : path.join(slashHost, slashPath).replace(/\\/g, '/')
 
     if (reqHeaders.has('x-copy') || searchParams.has('x-copy')) {
-      const pathToData = genDir(JSON.parse(reqHeaders.get('x-copy') || searchParams.get('x-copy')), slashPath)
-      await app.files.cp(getQuery, pathToData, { ...useOpts, cidVersion: 1, parents: true })
-      const useLink = 'ipfs://' + takeFirstSlash(pathToData).replace(/\\/g, "/")
+      const pathToData = genDir(JSON.parse(reqHeaders.get('x-copy') || searchParams.get('x-copy')), fullHost, slashPath)
+      await app.files.cp(useCID || getQuery, pathToData, { ...useOpts, cidVersion: 1, parents: true })
+      const usePathToData = pathToData.startsWith('/') ? pathToData.replace('/') : pathToData
+      const useLink = 'ipfs://' + usePathToData.replace(/\\/g, "/")
       return sendTheData(signal, { status: 200, headers: { 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"` }, body: '' })
     } else {
       try {
-        const mainData = await app.files.stat(getQuery, useOpts)
+        const mainData = await app.files.stat(useCID || getQuery, useOpts)
         const useLink = mainData.type === 'directory' ? 'ipfs://' + path.join(mainData.cid.toV1().toString(), '/').replace(/\\/g, "/") : 'ipfs://' + path.join(mainData.cid.toV1().toString(), fullPath).replace(/\\/g, "/")
         return sendTheData(signal, { status: 200, headers: { 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`, 'Content-Length': `${mainData.size}` }, body: '' })
       } catch (error) {
@@ -190,10 +194,12 @@ module.exports = async function makeIPFSFetch (opts = {}) {
 
     const mainReq = !reqHeaders.has('accept') || !reqHeaders.get('accept').includes('application/json')
     const mainRes = mainReq ? 'text/html; charset=utf-8' : 'application/json; charset=utf-8'
-    const getQuery = makeQuery(isCID, fullHost, slashHost, slashPath)
+    // const getQuery = makeQuery(isCID, fullHost, slashHost, slashPath)
+    const useCID = isCID ? CID.parse(fullHost) : null
+    const getQuery = useCID ? null : path.join(slashHost, slashPath).replace(/\\/g, '/')
 
     try {
-    const mainData = await app.files.stat(getQuery, useOpts)
+    const mainData = await app.files.stat(useCID || getQuery, useOpts)
     if (mainData.type === 'file') {
       const useLink = 'ipfs://' + path.join(mainData.cid.toV1().toString(), fullPath).replace(/\\/g, "/")
       const isRanged = reqHeaders.has('Range') || reqHeaders.has('range')
@@ -210,7 +216,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         return sendTheData(signal, {status: 200, headers: {'X-Link': `${useLink}`, 'Link': `<${useLink}>; rel="canonical"`, 'Content-Type': type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8', 'Content-Length': `${mainData.size}`}, body: app.files.read(getQuery, { ...useOpts })})
       }
     } else if (mainData.type === 'directory') {
-      const plain = await dirIter(app.files.ls(getQuery, useOpts))
+      const plain = await dirIter(app.files.ls(useCID || getQuery, useOpts))
       const useLink = 'ipfs://' + path.join(mainData.cid.toV1().toString(), '/').replace(/\\/g, "/")
       return sendTheData(signal, {status: 200, headers: {'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, body: mainReq ? `<html><head><title>${fullHost}</title></head><body><div>${plain.map((data) => {return `<p><a href="${data.link}">${data.name}</a></p>`})}</div></body></html>` : JSON.stringify(plain)})
     } else {
