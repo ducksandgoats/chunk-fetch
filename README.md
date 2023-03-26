@@ -1,5 +1,8 @@
 # chunk-fetch
 
+example of how a url looks like using chunk-fetch
+`ipfs://someCidAsHostname/some/path`
+
 `_` - hostname is ignored, url will start with the path and the path becomes the query, so ipfs://\_/somepath becomes ipfs://somepath
 `CID` - a CID that is used for the query
 
