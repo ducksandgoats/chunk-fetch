@@ -6,7 +6,6 @@ module.exports = async function makeIPFSFetch (opts = {}) {
   // const { CID } = require('multiformats/cid')
   const { Readable } = require('streamx')
   const path = require('path')
-  const crypto = require('crypto')
 
   const DEFAULT_OPTS = {}
   const finalOpts = { ...DEFAULT_OPTS, ...opts }
@@ -84,7 +83,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
 
   function genDir(id, hash, data) {
     if (id) {
-      const test = path.join(`/${crypto.createHash('md5').update(hash).digest("hex")}`, data).replace(/\\/g, "/")
+      const test = path.join(`/${hash}`, data).replace(/\\/g, "/")
       return test.endsWith('/') ? test.slice(0, test.lastIndexOf('/')) : test
     } else {
       return data
@@ -151,7 +150,8 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     const { hostname, pathname, protocol, search, searchParams } = new URL(url)
 
     const { mimeType: type, ext, query, fullPath, isCID, useHost, usePath } = formatReq(decodeURIComponent(hostname), decodeURIComponent(pathname))
-    const useOpts = { timeout: reqHeaders.has('x-timer') || searchParams.has('x-timer') ? reqHeaders.get('x-timer') !== '0' || searchParams.get('x-timer') !== '0' ? Number(reqHeaders.get('x-timer') || searchParams.get('x-timer')) * 1000 : undefined : ipfsTimeout }
+    const useOpt = reqHeaders.has('x-opt') || searchParams.has('x-opt') ? JSON.parse(reqHeaders.get('x-opt') || decodeURIComponent(searchParams.get('x-opt'))) : {}
+    const useOpts = { ...useOpt, timeout: reqHeaders.has('x-timer') || searchParams.has('x-timer') ? reqHeaders.get('x-timer') !== '0' || searchParams.get('x-timer') !== '0' ? Number(reqHeaders.get('x-timer') || searchParams.get('x-timer')) * 1000 : undefined : ipfsTimeout }
 
     if (reqHeaders.has('x-copy') || searchParams.has('x-copy')) {
       const pathToData = genDir(JSON.parse(reqHeaders.get('x-copy') || searchParams.get('x-copy')), useHost, usePath)
@@ -193,7 +193,8 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       const { hostname, pathname, protocol, search, searchParams } = new URL(url)
 
     const { mimeType: type, ext, query, fullPath, isCID, useHost, usePath } = formatReq(decodeURIComponent(hostname), decodeURIComponent(pathname))
-    const useOpts = { timeout: reqHeaders.has('x-timer') || searchParams.has('x-timer') ? reqHeaders.get('x-timer') !== '0' || searchParams.get('x-timer') !== '0' ? Number(reqHeaders.get('x-timer') || searchParams.get('x-timer')) * 1000 : undefined : ipfsTimeout }
+    const useOpt = reqHeaders.has('x-opt') || searchParams.has('x-opt') ? JSON.parse(reqHeaders.get('x-opt') || decodeURIComponent(searchParams.get('x-opt'))) : {}
+    const useOpts = { ...useOpt, timeout: reqHeaders.has('x-timer') || searchParams.has('x-timer') ? reqHeaders.get('x-timer') !== '0' || searchParams.get('x-timer') !== '0' ? Number(reqHeaders.get('x-timer') || searchParams.get('x-timer')) * 1000 : undefined : ipfsTimeout }
 
     const mainReq = !reqHeaders.has('accept') || !reqHeaders.get('accept').includes('application/json')
     const mainRes = mainReq ? 'text/html; charset=utf-8' : 'application/json; charset=utf-8'
@@ -276,7 +277,8 @@ module.exports = async function makeIPFSFetch (opts = {}) {
     const mainRes = mainReq ? 'text/html; charset=utf-8' : 'application/json; charset=utf-8'
 
     try {
-    await app.files.rm(query, { cidVersion: 1, recursive: true })
+    const useOpt = reqHeaders.has('x-opt') || searchParams.has('x-opt') ? JSON.parse(reqHeaders.get('x-opt') || decodeURIComponent(searchParams.get('x-opt'))) : {}
+    await app.files.rm(query, { ...useOpt, cidVersion: 1, recursive: true })
     const useLink = 'ipfs://_' + query
     return sendTheData(signal, { status: 200, headers: { 'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"` }, body: mainReq ? `<html><head><title>${useHost}</title></head><body><div>${JSON.stringify(useLink)}</div></body></html>` : JSON.stringify(useLink) })
     } catch (error) {
