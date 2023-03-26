@@ -162,7 +162,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       if (type) {
         useHeaders['Content-Type'] = type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8'
       }
-      return sendTheData(signal, { status: 200, headers: useHeaders })
+      return sendTheData(signal, { status: 200, headers: useHeaders, body: '' })
     } else {
       try {
         const mainData = await app.files.stat(query, useOpts)
@@ -171,11 +171,11 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         if (type) {
           useHeaders['Content-Type'] = type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8'
         }
-        return sendTheData(signal, { status: 200, headers: useHeaders })
+        return sendTheData(signal, { status: 200, headers: useHeaders, body: '' })
       } catch (error) {
         if (error.message.includes('does not exist')) {
           const useLink = 'ipfs://'  + path.join(useHost, usePath).replace(/\\/g, '/')
-          return sendTheData(signal, { status: 400, headers: { 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`, 'X-Error': error.message } })
+          return sendTheData(signal, { status: 400, headers: { 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`, 'X-Error': error.message }, body: '' })
         } else {
           throw error
         }
