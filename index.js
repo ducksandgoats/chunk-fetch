@@ -163,7 +163,25 @@ module.exports = async function makeIPFSFetch (opts = {}) {
         useHeaders['Content-Type'] = type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8'
       }
       return sendTheData(signal, { status: 200, headers: useHeaders, body: '' })
-    } else {
+    } else if (reqHeaders.has('x-pin') || searchParams.has('x-pin')) {
+      if (JSON.parse(reqHeaders.get('x-pin') || searchParams.get('x-pin'))) {
+        const cid = app.pin.add(query, { ...useOpts, recursive: true })
+        const useLink = `ipfs://${cid.toV1().toString()}/`
+        const useHeaders = { 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"` }
+        if (type) {
+          useHeaders['Content-Type'] = type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8'
+        }
+        return sendTheData(signal, { status: 200, headers: useHeaders, body: '' })
+      } else {
+        const cid = app.pin.rm(query, { ...useOpts, recursive: true })
+        const useLink = `ipfs://${cid.toV1().toString()}/`
+        const useHeaders = { 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"` }
+        if (type) {
+          useHeaders['Content-Type'] = type ? type.startsWith('text/') ? `${type}; charset=utf-8` : type : 'text/plain; charset=utf-8'
+        }
+        return sendTheData(signal, { status: 200, headers: useHeaders, body: '' })
+      }
+    }  else {
       try {
         const mainData = await app.files.stat(query, useOpts)
         const useLink = mainData.type === 'directory' ? 'ipfs://' + path.join(mainData.cid.toV1().toString(), '/').replace(/\\/g, "/") : 'ipfs://' + path.join(mainData.cid.toV1().toString(), ext).replace(/\\/g, "/")
