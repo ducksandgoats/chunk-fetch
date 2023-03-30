@@ -239,7 +239,7 @@ module.exports = async function makeIPFSFetch (opts = {}) {
       const useLink = 'ipfs://' + path.join(mainData.cid.toV1().toString(), '/').replace(/\\/g, "/")
       return sendTheData(signal, {status: 200, headers: {'Content-Type': mainRes, 'X-Link': useLink, 'Link': `<${useLink}>; rel="canonical"`, 'Content-Length': `${mainData.size}`}, body: mainReq ? `<html><head><title>${useHost}</title></head><body><div>${plain.map((data) => {return `<p><a href="${data.link}">${data.name}</a></p>`})}</div></body></html>` : JSON.stringify(plain)})
     } else {
-      throw new Error('data is invalid')
+      return sendTheData(signal, { status: 400, headers: { 'Content-Type': mainRes }, body: mainReq ? `<html><head><title>ipfs://${useHost}${usePath}</title></head><body><div><p>did not find any file</p></div></body></html>` : JSON.stringify('did not find any file') })
     }
     } catch (error) {
         if (error.message.includes('does not exist')) {
